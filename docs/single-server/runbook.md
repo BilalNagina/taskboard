@@ -58,10 +58,12 @@ Actions → **Deploy (single server)** → Run workflow → tick **Skip the HTTP
 ssh -i ~/.ssh/taskboard ubuntu@<static_ip>
 sudo certbot certonly --webroot -w /var/www/certbot \
   -d taskboard.example.com -m you@example.com --agree-tos --no-eff-email \
-  --deploy-hook "cd /opt/taskboard && docker compose restart proxy"
+  --deploy-hook "docker compose --project-directory /opt/taskboard restart proxy"
 cd /opt/taskboard && docker compose restart proxy
 sudo certbot renew --dry-run      # confirms automatic renewal works
 ```
+
+certbot requires the deploy hook to start with an executable, so `cd /opt/taskboard && ...` is rejected; `--project-directory` does the same job. Non-interactive renewals wait a random 0–8 minutes before contacting Let's Encrypt, so a dry run can sit quietly for a few minutes.
 
 Open `https://taskboard.example.com`. The footer shows the deployed commit.
 
