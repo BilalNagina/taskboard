@@ -1,4 +1,8 @@
 #!/bin/sh
+# The single quotes around '${DOMAIN}' below are deliberate: envsubst takes the literal
+# list of variable names to replace, which leaves nginx's own $variables untouched.
+# shellcheck disable=SC2016
+#
 # Renders the nginx config at container start. HTTPS is switched on only once a
 # certificate exists, so the very first start can serve the Let's Encrypt challenge.
 set -eu

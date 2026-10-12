@@ -5,7 +5,7 @@ APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKUP_DIR=/var/backups/taskboard
 
 load_env() {
-  cd "$APP_DIR"
+  cd "$APP_DIR" || return
   set -a
   # shellcheck disable=SC1091
   . ./.env

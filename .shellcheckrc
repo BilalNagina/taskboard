@@ -1,0 +1,2 @@
+# Resolve `source`/`.` includes relative to each script's own directory.
+source-path=SCRIPTDIR
