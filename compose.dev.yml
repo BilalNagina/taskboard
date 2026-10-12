@@ -1,6 +1,15 @@
-# Local development: PostgreSQL + API in containers, frontend via `npm run dev`.
+# Local development: the full backend in containers, frontend via `npm run dev`.
 #   docker compose -f compose.dev.yml up --build
 #   cd app/web && npm install && npm run dev   ->  http://localhost:5173
+# MinIO stands in for S3 (console http://localhost:9001, minio / minio-secret) and
+# Mailpit catches reminder emails (http://localhost:8025).
+x-app-env: &app-env
+  DATABASE_URL: postgres://taskboard:taskboard@db:5432/taskboard
+  REDIS_URL: redis://redis:6379
+  APP_URL: http://localhost:5173
+  COOKIE_SECURE: "false"
+  LOG_LEVEL: debug
+
 services:
   db:
     image: postgres:16-alpine
@@ -15,13 +24,76 @@ services:
       interval: 5s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio-secret
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      retries: 10
+
+  # Creates the attachments bucket once MinIO is up, then exits.
+  minio-init:
+    image: minio/mc:latest
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["mc alias set local http://minio:9000 minio minio-secret && mc mb --ignore-existing local/taskboard-attachments"]
+    depends_on:
+      minio:
+        condition: service_healthy
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "8025:8025"
+
   api:
     build: ./app/api
     environment:
-      DATABASE_URL: postgres://taskboard:taskboard@db:5432/taskboard
-      LOG_LEVEL: debug
+      <<: *app-env
+      NODE_ENV: development
+      S3_BUCKET: taskboard-attachments
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY_ID: minio
+      S3_SECRET_ACCESS_KEY: minio-secret
     ports:
       - "3000:3000"
     depends_on:
       db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+
+  worker:
+    build: ./app/api
+    command: ["node", "src/worker.js"]
+    environment:
+      <<: *app-env
+      NODE_ENV: development
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      MAIL_FROM: Taskboard <reminders@taskboard.local>
+      # Scan every 30 seconds so reminders show up in Mailpit quickly.
+      REMINDER_SCAN_MS: "30000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3001/healthz"]
+      interval: 15s
+    depends_on:
+      api:
         condition: service_healthy

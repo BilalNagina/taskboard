@@ -20,7 +20,7 @@ set_tag() {
 
 echo "==> Deploying $NEW_TAG (currently ${PREV_TAG:-none})"
 set_tag "$NEW_TAG"
-docker compose pull api web
+docker compose pull api web worker
 docker compose up -d --remove-orphans
 
 if ./scripts/healthcheck.sh; then

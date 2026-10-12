@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   api:
-    name: API (lint + tests)
+    name: API (lint + unit and integration tests)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -28,9 +28,19 @@ jobs:
           --health-interval 5s
           --health-timeout 3s
           --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     env:
-      # Enables the integration tests against a real PostgreSQL.
+      # Enables the integration tests against a real PostgreSQL and Redis.
       DATABASE_URL: postgres://taskboard:taskboard@localhost:5432/taskboard
+      REDIS_URL: redis://localhost:6379
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -63,7 +73,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Validate docker-compose.yml
-        run: docker compose -f deploy/single-server/docker-compose.yml --env-file deploy/single-server/.env.example config --quiet
+      - name: Validate compose files
+        run: |
+          docker compose -f deploy/single-server/docker-compose.yml --env-file deploy/single-server/.env.example config --quiet
+          docker compose -f compose.dev.yml config --quiet
       - name: Shellcheck scripts
         run: shellcheck -x deploy/single-server/scripts/*.sh deploy/single-server/nginx/render.sh

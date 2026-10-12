@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Usage: restore.sh <backup-name|latest> [--yes]
-# Restores a backup from S3 over the live database. The API is stopped while it runs.
+# Restores a backup from S3 over the live database. The API and worker are stopped while it runs.
 set -euo pipefail
 # shellcheck source=lib.sh
 . "$(dirname "$0")/lib.sh"
@@ -23,10 +23,10 @@ echo "==> Downloading $NAME"
 aws_cli s3 cp "s3://$BACKUP_BUCKET/postgres/$NAME" "/backups/$NAME" --only-show-errors
 gzip -t "$BACKUP_DIR/$NAME"
 
-echo "==> Restoring (API stopped)"
-docker compose stop api
+echo "==> Restoring (API and worker stopped)"
+docker compose stop api worker
 gunzip -c "$BACKUP_DIR/$NAME" |
   docker compose exec -T db psql -v ON_ERROR_STOP=1 -q -U "$POSTGRES_USER" -d "$POSTGRES_DB"
-docker compose start api
+docker compose start api worker
 ./scripts/healthcheck.sh
 echo "==> Restored $NAME"

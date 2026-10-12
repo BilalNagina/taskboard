@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Waits (up to ~90 s) for the api and web containers to be healthy and the API to
-# reach the database. Exits non-zero if they don't, so deploy.sh can roll back.
+# Waits (up to ~2 min) for the api, worker and web containers to be healthy and the API
+# to reach PostgreSQL and Redis. Exits non-zero if they don't, so deploy.sh can roll back.
 set -euo pipefail
 # shellcheck source=lib.sh
 . "$(dirname "$0")/lib.sh"
@@ -13,11 +13,13 @@ status() {
 }
 
 api="unknown"
+worker="unknown"
 web="unknown"
-for i in $(seq 1 30); do
+for i in $(seq 1 40); do
   api="$(status api)"
+  worker="$(status worker)"
   web="$(status web)"
-  if [ "$api" = healthy ] && [ "$web" = healthy ] &&
+  if [ "$api" = healthy ] && [ "$worker" = healthy ] && [ "$web" = healthy ] &&
     docker compose exec -T api wget -qO- http://127.0.0.1:3000/readyz >/dev/null 2>&1; then
     echo "healthy after $((i * 3))s"
     exit 0
@@ -25,6 +27,6 @@ for i in $(seq 1 30); do
   sleep 3
 done
 
-echo "not healthy: api=$api web=$web"
-docker compose logs --tail=50 api
+echo "not healthy: api=$api worker=$worker web=$web"
+docker compose logs --tail=50 api worker
 exit 1
