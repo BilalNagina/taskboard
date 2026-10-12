@@ -1,0 +1,42 @@
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name ${DOMAIN};
+
+    ssl_certificate     /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    client_max_body_size 1m;
+
+    # Re-resolve container names through Docker's DNS. Without this, nginx keeps the
+    # old container IPs after a redeploy and returns 502 until it is restarted.
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    set $api_upstream http://api:3000;
+    set $web_upstream http://web:8080;
+
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    location /api/ {
+        proxy_pass $api_upstream;
+    }
+
+    # Public readiness check for uptime monitoring. /metrics stays internal.
+    location = /readyz {
+        proxy_pass $api_upstream;
+    }
+
+    location / {
+        proxy_pass $web_upstream;
+    }
+}

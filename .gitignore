@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+*.log
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+terraform.tfvars
+.terraform.lock.hcl.bak
+tfplan

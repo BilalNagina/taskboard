@@ -1,0 +1,101 @@
+name: Deploy (single server)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - app/**
+      - deploy/single-server/**
+      - .github/workflows/ci.yml
+      - .github/workflows/deploy-single-server.yml
+  workflow_dispatch:
+    inputs:
+      skip_https_check:
+        description: Skip the HTTPS check (first deploy, before the certificate exists)
+        type: boolean
+        default: false
+
+# Never run two deploys at once; queue them instead.
+concurrency:
+  group: deploy-single-server
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  images:
+    name: Build and push ${{ matrix.component }}
+    needs: ci
+    # Push-triggered deploys start once the DOMAIN variable is set (DNS and HTTPS ready).
+    # Manual runs always deploy, which is how the very first deploy happens.
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.DOMAIN != '' }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        component: [api, web]
+    steps:
+      - uses: actions/checkout@v5
+      - id: meta
+        run: |
+          echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: app/${{ matrix.component }}
+          push: true
+          tags: |
+            ghcr.io/${{ steps.meta.outputs.owner }}/taskboard-${{ matrix.component }}:${{ github.sha }}
+            ghcr.io/${{ steps.meta.outputs.owner }}/taskboard-${{ matrix.component }}:latest
+          build-args: APP_VERSION=${{ steps.meta.outputs.short_sha }}
+          labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha,scope=${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.component }}
+
+  deploy:
+    name: Deploy to server
+    needs: images
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://${{ vars.DOMAIN }}
+    env:
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+      SSH_USER: ${{ vars.SSH_USER || 'ubuntu' }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Log the server in to GHCR (token expires when this job ends)
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GHCR_TOKEN" | ssh "$SSH_USER@$SSH_HOST" "docker login ghcr.io -u ${{ github.actor }} --password-stdin"
+      - name: Upload deployment files
+        run: |
+          scp -r deploy/single-server/docker-compose.yml deploy/single-server/nginx deploy/single-server/scripts \
+            "$SSH_USER@$SSH_HOST:/opt/taskboard/"
+      - name: Deploy and health-check (rolls back automatically on failure)
+        run: ssh "$SSH_USER@$SSH_HOST" "chmod +x /opt/taskboard/scripts/*.sh && /opt/taskboard/scripts/deploy.sh $GITHUB_SHA"
+      - name: Log the server out of GHCR
+        if: always()
+        run: ssh "$SSH_USER@$SSH_HOST" "docker logout ghcr.io" || true
+      - name: Verify over HTTPS
+        if: ${{ !inputs.skip_https_check && vars.DOMAIN != '' }}
+        run: curl -fsS --retry 10 --retry-delay 5 --retry-all-errors "https://${{ vars.DOMAIN }}/readyz"

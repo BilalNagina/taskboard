@@ -1,0 +1,28 @@
+name: Uptime check
+
+# External check from GitHub's network: if the server goes down, a monitor running on the
+# same server would go down with it. A failed run emails the repository owner.
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    # Clear the DOMAIN variable to pause checks while the environment is torn down.
+    if: ${{ vars.DOMAIN != '' }}
+    runs-on: ubuntu-latest
+    env:
+      DOMAIN: ${{ vars.DOMAIN }}
+    steps:
+      - name: Readiness endpoint responds
+        run: curl -fsS --max-time 10 --retry 2 --retry-delay 10 "https://$DOMAIN/readyz"
+      - name: Certificate valid for at least 14 more days
+        run: |
+          end="$(echo | openssl s_client -servername "$DOMAIN" -connect "$DOMAIN:443" 2>/dev/null | openssl x509 -noout -enddate | cut -d= -f2)"
+          days=$(( ($(date -d "$end" +%s) - $(date +%s)) / 86400 ))
+          echo "Certificate expires in $days days ($end)"
+          test "$days" -ge 14

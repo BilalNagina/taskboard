@@ -1,0 +1,6 @@
+# Copy to terraform.tfvars (git-ignored) and fill in.
+region              = "eu-west-3"
+backup_bucket_name  = "taskboard-backups-<something-unique>"
+budget_email        = "you@example.com"
+budget_limit_usd    = 20
+ssh_public_key_path = "~/.ssh/taskboard.pub"
