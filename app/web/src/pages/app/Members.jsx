@@ -125,6 +125,10 @@ export default function Members() {
       {isOwner && invites.length > 0 && (
         <section className="invites">
           <h2 className="section-title">Pending invitations</h2>
+          <p className="faint small section-hint">
+            Invited people can join from the link, or from a banner in Tasklane once they sign in with the invited email.
+            Resending creates a new link and the old one stops working.
+          </p>
           <div className="card member-list">
             {invites.map((invite) => (
               <div key={invite.id} className="member-row">
@@ -140,7 +144,7 @@ export default function Members() {
                   className="btn btn-secondary btn-sm"
                   onClick={async () => {
                     const result = await run(() => api.resendInvite(invite.id));
-                    if (result) await copyLink(result.link, toast, 'New invite link copied');
+                    if (result) await copyLink(result.link, toast, 'New link copied. The previous link no longer works.');
                   }}
                 >
                   Resend and copy link

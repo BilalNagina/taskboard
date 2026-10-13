@@ -23,6 +23,7 @@ export const keys = {
   activity: (boardId) => ['activity', boardId],
   members: (workspaceId) => ['members', workspaceId],
   invites: (workspaceId) => ['invites', workspaceId],
+  myInvites: ['myInvites'],
 };
 
 // null when signed out (401), the user otherwise.
@@ -73,3 +74,6 @@ export function useAction(fn, { invalidate = [], onSuccess } = {}) {
     },
   });
 }
+
+// Invites addressed to me, shown as a banner in the app until accepted or declined.
+export const useMyInvites = () => useQuery({ queryKey: keys.myInvites, queryFn: api.myInvites, refetchInterval: 60_000 });

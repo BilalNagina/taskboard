@@ -100,6 +100,16 @@ export function membersRepo(db) {
         [tokenHash],
       ),
 
+    // Pending, unexpired invites addressed to this email, for the in-app banner.
+    invitesForEmail: (email) =>
+      all(
+        `SELECT ${INVITE}, w.name AS "workspaceName"
+           FROM invites i JOIN workspaces w ON w.id = i.workspace_id LEFT JOIN users inviter ON inviter.id = i.invited_by
+          WHERE i.email = $1 AND i.accepted_at IS NULL AND i.expires_at > now()
+          ORDER BY i.id`,
+        [email],
+      ),
+
     // Joins the workspace. Someone already in it keeps their current role.
     acceptInvite: (inviteId, userId) =>
       db.tx(async (q) => {

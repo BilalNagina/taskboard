@@ -84,6 +84,9 @@ export const api = {
   revokeInvite: (id) => request(`/invites/${id}`, { method: 'DELETE' }),
   lookupInvite: (token) => request('/invites/lookup', { method: 'POST', json: { token } }),
   acceptInvite: (token) => request('/invites/accept', { method: 'POST', json: { token } }),
+  myInvites: () => request('/me/invites'),
+  acceptMyInvite: (id) => request(`/me/invites/${id}/accept`, { method: 'POST' }),
+  declineMyInvite: (id) => request(`/me/invites/${id}`, { method: 'DELETE' }),
 
   // files
   upload: (taskId, file) => request(`/tasks/${taskId}/attachments`, { method: 'POST', file }),
