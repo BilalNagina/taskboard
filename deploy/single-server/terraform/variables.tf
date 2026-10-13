@@ -52,3 +52,26 @@ variable "budget_email" {
   description = "Where budget alerts are sent."
   type        = string
 }
+
+variable "attachments_bucket_name" {
+  description = "Globally unique S3 bucket name for task attachments."
+  type        = string
+}
+
+variable "attachment_version_retention_days" {
+  description = "How long deleted or replaced attachment versions are kept (file backup window)."
+  type        = number
+  default     = 30
+}
+
+variable "mail_domain" {
+  description = "Domain reminder emails are sent from, verified in SES with DKIM (e.g. taskboard.example.com). Empty disables email."
+  type        = string
+  default     = ""
+}
+
+variable "mail_verified_recipients" {
+  description = "Addresses to verify in SES. Needed while the account is in the SES sandbox, which only delivers to verified addresses."
+  type        = list(string)
+  default     = []
+}

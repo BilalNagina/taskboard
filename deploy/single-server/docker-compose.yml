@@ -6,6 +6,14 @@ x-logging: &logging
     max-size: "10m"
     max-file: "3"
 
+# Settings shared by the api and worker containers (same image, different command).
+x-app-env: &app-env
+  NODE_ENV: production
+  DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+  REDIS_URL: redis://redis:6379
+  APP_URL: https://${DOMAIN}
+  LOG_LEVEL: info
+
 services:
   # Edge proxy: terminates HTTPS, serves the ACME challenge, routes /api to the API.
   proxy:
@@ -35,11 +43,55 @@ services:
     image: ghcr.io/${GH_OWNER}/taskboard-api:${TAG}
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
-      LOG_LEVEL: info
+      <<: *app-env
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_REGION: ${S3_REGION:-}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+    logging: *logging
+
+  # Sends reminder emails from a Redis-backed job queue (BullMQ).
+  worker:
+    image: ghcr.io/${GH_OWNER}/taskboard-api:${TAG}
+    command: ["node", "src/worker.js"]
+    restart: unless-stopped
+    environment:
+      <<: *app-env
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3001/healthz"]
+      interval: 15s
+      timeout: 3s
+      start_period: 20s
+      retries: 3
+    # Starts after the api, which runs the database migrations.
+    depends_on:
+      api:
+        condition: service_healthy
+    logging: *logging
+
+  # Sessions and the job queue. Append-only persistence keeps both across restarts;
+  # noeviction because BullMQ must never have queue keys evicted.
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "128mb", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     logging: *logging
 
   db:
@@ -60,3 +112,4 @@ services:
 
 volumes:
   pgdata:
+  redisdata:

@@ -4,3 +4,6 @@ backup_bucket_name  = "taskboard-backups-<something-unique>"
 budget_email        = "you@example.com"
 budget_limit_usd    = 20
 ssh_public_key_path = "~/.ssh/taskboard.pub"
+attachments_bucket_name  = "taskboard-attachments-<something-unique>"
+mail_domain              = "taskboard.example.com"
+mail_verified_recipients = ["you@example.com"]
