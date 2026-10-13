@@ -12,10 +12,10 @@ const binary = (res, cb) => {
 };
 
 describe('dashboard, calendar, search, notifications, avatars, exports', { skip: skipIntegration }, () => {
-  let db, repo, app, signUp, addMember, close;
+  let db, repo, signUp, addMember, close;
 
   before(async () => {
-    ({ db, repo, app, signUp, addMember, close } = await setupApi());
+    ({ db, repo, signUp, addMember, close } = await setupApi());
   });
 
   after(() => close());
