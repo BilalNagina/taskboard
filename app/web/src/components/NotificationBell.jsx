@@ -47,9 +47,14 @@ export default function NotificationBell() {
     };
   }, [open]);
 
+  // Read state is a nicety: if saving it fails, the list simply refreshes as it was.
   async function markRead(ids) {
-    const { unread: left } = await api.markRead(ids);
-    client.setQueryData(keys.unread, { unread: left });
+    try {
+      const { unread: left } = await api.markRead(ids);
+      client.setQueryData(keys.unread, { unread: left });
+    } catch {
+      // Ignored on purpose; the next poll shows the true count.
+    }
     client.invalidateQueries({ queryKey: keys.notifications });
   }
 

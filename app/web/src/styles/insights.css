@@ -198,3 +198,7 @@ mark { background: color-mix(in srgb, var(--warning) 28%, transparent); color: i
   .stat { padding: 14px; }
   .filter-search input { width: 110px; }
 }
+
+/* Narrow dashboard lists: leave labels to the board itself. */
+.dash-card .task-link-meta .label { display: none; }
+.cal-filters .input { width: auto; }
