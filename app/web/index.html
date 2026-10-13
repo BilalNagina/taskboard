@@ -3,7 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Taskboard</title>
+    <title>Tasklane: task management for small teams</title>
+    <meta name="description" content="Tasklane brings boards, due dates, checklists and team workspaces together in one calm, fast app." />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <script>
+      // Apply the saved theme before the first paint, so dark-mode users never see a white flash.
+      try {
+        var theme = localStorage.getItem('tasklane-theme');
+        if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

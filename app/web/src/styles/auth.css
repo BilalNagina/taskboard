@@ -1,0 +1,46 @@
+/* Sign-up, login and password pages */
+
+.auth { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.auth-main { display: flex; flex-direction: column; padding: 24px 32px; }
+.auth-form-wrap { width: 100%; max-width: 400px; margin: auto; padding: 40px 0; animation: rise var(--normal) var(--ease); }
+.auth h1 { font-size: 28px; font-weight: 800; letter-spacing: -0.03em; }
+.auth-sub { margin-top: 8px; }
+.auth-form { display: grid; gap: 16px; margin-top: 28px; }
+.auth-form .btn-lg { margin-top: 4px; }
+.auth-footer { margin-top: 24px; text-align: center; font-size: 14px; }
+
+.auth-aside {
+  position: relative; overflow: hidden; display: grid; place-items: center; padding: 48px;
+  background: linear-gradient(150deg, #312e81 0%, #4f46e5 45%, #0891b2 100%); color: #fff;
+}
+.auth-aside::after {
+  content: ""; position: absolute; inset: 0;
+  background: radial-gradient(400px 300px at 80% 10%, rgb(255 255 255 / 0.14), transparent 70%);
+}
+.auth-aside-inner { position: relative; z-index: 1; max-width: 400px; display: grid; gap: 28px; }
+.auth-aside-quote { font-size: 28px; font-weight: 800; line-height: 1.2; letter-spacing: -0.02em; }
+.auth-aside ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.auth-aside li { display: flex; align-items: center; gap: 10px; opacity: 0.92; }
+.auth-aside-card {
+  padding: 16px; border-radius: var(--radius-lg); background: rgb(255 255 255 / 0.96); color: #0f172a;
+  box-shadow: 0 20px 50px rgb(0 0 0 / 0.25); transform: rotate(-2deg);
+  transition: transform var(--slow) var(--ease);
+}
+.auth-aside-card:hover { transform: rotate(0); }
+.auth-aside-card p { margin: 6px 0 10px; font-weight: 700; }
+.auth-aside-card small { color: #64748b; }
+.auth-aside-progress { height: 6px; border-radius: 999px; background: #e2e8f0; overflow: hidden; margin-bottom: 6px; }
+.auth-aside-progress span { display: block; height: 100%; border-radius: inherit; background: #4f46e5; }
+
+.strength { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--text-faint); }
+.strength-bars { display: flex; gap: 4px; flex: 1; max-width: 160px; }
+.strength-bars span { flex: 1; height: 4px; border-radius: 999px; background: var(--border); transition: background-color var(--normal) var(--ease); }
+.strength-1 .on { background: var(--danger); }
+.strength-2 .on { background: var(--warning); }
+.strength-3 .on, .strength-4 .on { background: var(--success); }
+
+@media (max-width: 880px) {
+  .auth { grid-template-columns: 1fr; }
+  .auth-aside { display: none; }
+  .auth-main { padding: 20px 16px; }
+}

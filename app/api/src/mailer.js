@@ -15,7 +15,8 @@ export function createMailer({ host, port, user, pass, from }, logger) {
   return {
     async send({ to, subject, text, html }) {
       const info = await transport.sendMail({ from, to, subject, text, html });
-      if (!host) logger?.info({ to, subject }, 'email not sent (SMTP_HOST not set)');
+      // The body is logged so links (password resets) are still usable in development.
+      if (!host) logger?.info({ to, subject, text }, 'email not sent (SMTP_HOST not set)');
       return info.messageId;
     },
     close: () => transport.close(),

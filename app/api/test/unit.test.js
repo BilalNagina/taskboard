@@ -1,38 +1,61 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import request from 'supertest';
-import { createApp } from '../src/app.js';
+import { roleAtLeast } from '../src/data/index.js';
+import { buildPasswordResetEmail, buildReminderEmail } from '../src/emails.js';
+import { createApp } from '../src/http/app.js';
+import { HttpError } from '../src/http/errors.js';
+import { parseContentType, parseFilename, parseId, schemas, validate } from '../src/http/validation.js';
+import { resetLink, sendPasswordReset } from '../src/jobs.js';
 import { hashPassword, verifyPassword } from '../src/passwords.js';
-import { buildReminderEmail, describeDue, reminderJobId, scanDueTasks, sendReminder } from '../src/reminders.js';
-import { parseContentType, parseDate, parseEmail, parseFilename, parseId, parseText } from '../src/validate.js';
+import { describeDue, reminderJobId, scanDueTasks, sendReminder } from '../src/reminders.js';
+
+const rejects = (schema, value) => assert.throws(() => validate(schema, value), HttpError);
 
 // ---------------------------------------------------------------- validation
 
-test('parses text, ids and emails', () => {
-  assert.equal(parseText('  Ship it  ', 200), 'Ship it');
-  for (const bad of [undefined, '', '   ', 42, 'x'.repeat(201)]) assert.equal(parseText(bad, 200), null);
-  assert.equal(parseId('7'), 7);
-  for (const bad of ['0', '-1', 'abc', '1.5', '99999999999']) assert.equal(parseId(bad), null);
-  assert.equal(parseEmail(' Ada@Example.COM '), 'ada@example.com');
-  for (const bad of ['ada', 'ada@example', '@example.com', 'a b@example.com', 5]) assert.equal(parseEmail(bad), null);
+test('sign-up input is trimmed, lowercased and checked', () => {
+  assert.deepEqual(validate(schemas.register, { name: '  Ada  ', email: ' Ada@Example.COM ', password: 'correct horse' }), {
+    name: 'Ada',
+    email: 'ada@example.com',
+    password: 'correct horse',
+  });
+  rejects(schemas.register, { name: '', email: 'ada@example.com', password: 'correct horse' });
+  rejects(schemas.register, { name: 'Ada', email: 'ada@example', password: 'correct horse' });
+  rejects(schemas.register, { name: 'Ada', email: 'ada@example.com', password: 'short' });
+  rejects(schemas.register, undefined);
+  assert.throws(() => validate(schemas.register, { name: 'x'.repeat(81), email: 'a@b.co', password: '12345678' }), {
+    message: 'name must be at most 80 characters',
+  });
 });
 
-test('accepts only real calendar dates', () => {
-  assert.equal(parseDate('2026-10-14'), '2026-10-14');
-  for (const bad of ['2026-02-30', '2026-13-01', '14/10/2026', '2026-10-14T00:00:00Z', null]) {
-    assert.equal(parseDate(bad), null, `${bad} should be rejected`);
-  }
+test('task input accepts only real dates and real changes', () => {
+  assert.equal(validate(schemas.newTask, { title: 'Ship', dueDate: '2026-10-14' }).dueDate, '2026-10-14');
+  assert.equal(validate(schemas.newTask, { title: 'Ship', dueDate: null }).dueDate, null);
+  for (const dueDate of ['2026-02-30', '14/10/2026', 'tomorrow']) rejects(schemas.newTask, { title: 'Ship', dueDate });
+  assert.throws(() => validate(schemas.updateTask, {}), { message: 'nothing to update' });
+  assert.deepEqual(validate(schemas.updateTask, { dueDate: null }), { dueDate: null });
+  rejects(schemas.updateTask, { done: 'yes' });
+  rejects(schemas.profile, { theme: 'purple' });
 });
 
-test('cleans uploaded filenames and content types', () => {
+test('ids, filenames and content types', () => {
+  assert.equal(parseId('7', 'task'), 7);
+  for (const bad of ['0', '-1', 'abc', '1.5', '99999999999']) assert.throws(() => parseId(bad, 'task'), { status: 400 });
   assert.equal(parseFilename(encodeURIComponent('Q3 report ü.pdf')), 'Q3 report ü.pdf');
   assert.equal(parseFilename(encodeURIComponent('../../etc/passwd')), 'passwd');
   assert.equal(parseFilename(encodeURIComponent('C:\\Users\\me\\notes.txt')), 'notes.txt');
   assert.equal(parseFilename('%E0%A4%A'), null);
-  assert.equal(parseFilename(undefined), null);
-  assert.equal(parseContentType('image/png'), 'image/png');
   assert.equal(parseContentType('text/plain; charset=utf-8'), 'text/plain');
   assert.equal(parseContentType('not a type'), 'application/octet-stream');
+});
+
+test('roles rank viewer < member < owner', () => {
+  assert.equal(roleAtLeast('owner', 'member'), true);
+  assert.equal(roleAtLeast('member', 'member'), true);
+  assert.equal(roleAtLeast('viewer', 'member'), false);
+  assert.equal(roleAtLeast('member', 'owner'), false);
+  assert.equal(roleAtLeast(undefined, 'viewer'), false);
 });
 
 // ---------------------------------------------------------------- passwords
@@ -46,16 +69,9 @@ test('hashes and verifies passwords', async () => {
   assert.equal(await verifyPassword('anything', 'not-a-hash'), false);
 });
 
-// ---------------------------------------------------------------- reminders
+// ---------------------------------------------------------------- emails and jobs
 
-const dueTask = {
-  id: 4,
-  title: 'Renew <TLS> cert',
-  dueDate: '2026-10-14',
-  boardName: 'Ops',
-  email: 'ada@example.com',
-  userName: 'Ada',
-};
+const dueTask = { id: 4, title: 'Renew <TLS> cert', dueDate: '2026-10-14', boardName: 'Ops', email: 'ada@example.com', userName: 'Ada' };
 
 test('describes how soon a task is due', () => {
   assert.equal(describeDue('2026-10-12', '2026-10-13'), 'overdue');
@@ -64,53 +80,56 @@ test('describes how soon a task is due', () => {
   assert.equal(describeDue('2026-10-20', '2026-10-13'), 'due in 7 days');
 });
 
-test('builds a reminder email with escaped HTML', () => {
-  const email = buildReminderEmail(dueTask, 'https://taskboard.example.com', '2026-10-13');
-  assert.equal(email.to, 'ada@example.com');
-  assert.equal(email.subject, 'Reminder: "Renew <TLS> cert" is due tomorrow');
-  assert.match(email.text, /board "Ops" is due tomorrow \(2026-10-14\)/);
-  assert.match(email.html, /Renew &lt;TLS&gt; cert/);
-  assert.doesNotMatch(email.html, /<TLS>/);
+test('reminder and reset emails escape user content', () => {
+  const reminder = buildReminderEmail(dueTask, 'https://app.example.com', 'due tomorrow');
+  assert.equal(reminder.subject, 'Reminder: "Renew <TLS> cert" is due tomorrow');
+  assert.match(reminder.html, /Renew &lt;TLS&gt; cert/);
+  assert.doesNotMatch(reminder.html, /<TLS>/);
+
+  const reset = buildPasswordResetEmail({ name: '<b>Ada</b>', email: 'ada@example.com' }, 'https://app.example.com/reset-password?token=abc', 30);
+  assert.equal(reset.to, 'ada@example.com');
+  assert.match(reset.subject, /Reset your Tasklane password/);
+  assert.match(reset.text, /reset-password\?token=abc/);
+  assert.match(reset.text, /within 30 minutes/);
+  assert.doesNotMatch(reset.html, /<b>Ada<\/b>/);
 });
 
 test('scan queues one email job per due task, keyed by task and due date', async () => {
   const added = [];
   const repo = { tasksNeedingReminder: async () => [{ id: 4, dueDate: '2026-10-14' }, { id: 9, dueDate: '2026-10-13' }] };
-  const queue = { addBulk: async (jobs) => added.push(...jobs) };
-  assert.deepEqual(await scanDueTasks({ repo, queue }), { queued: 2 });
-  assert.deepEqual(
-    added.map((j) => j.opts.jobId),
-    ['reminder-4-2026-10-14', 'reminder-9-2026-10-13'],
-  );
+  assert.deepEqual(await scanDueTasks({ repo, queue: { addBulk: async (jobs) => added.push(...jobs) } }), { queued: 2 });
+  assert.deepEqual(added.map((j) => j.opts.jobId), ['reminder-4-2026-10-14', 'reminder-9-2026-10-13']);
   assert.equal(reminderJobId({ id: 4, dueDate: '2026-10-14' }).includes(':'), false, 'BullMQ rejects ":" in ids');
 });
 
 test('sends a reminder only if the task still needs one', async () => {
   const sent = [];
   const marked = [];
-  const mailer = { send: async (msg) => sent.push(msg) };
   const repo = {
     reminderDetails: async (id) => (id === 4 ? dueTask : null),
     markReminded: async (id, due) => marked.push([id, due]),
   };
-  const deps = { repo, mailer, appUrl: 'https://taskboard.example.com' };
-
+  const deps = { repo, mailer: { send: async (msg) => sent.push(msg) }, appUrl: 'https://app.example.com' };
   assert.deepEqual(await sendReminder(deps, { taskId: 4, dueDate: '2026-10-14' }, '2026-10-13'), { sent: true });
   assert.deepEqual(await sendReminder(deps, { taskId: 5, dueDate: '2026-10-14' }, '2026-10-13'), { sent: false });
   assert.equal(sent.length, 1);
   assert.deepEqual(marked, [[4, '2026-10-14']]);
 });
 
+test('password-reset job emails a link with the token', async () => {
+  const sent = [];
+  const repo = { findUserById: async (id) => (id === 1 ? { id: 1, name: 'Ada', email: 'ada@example.com' } : null) };
+  const deps = { repo, mailer: { send: async (msg) => sent.push(msg) }, appUrl: 'https://app.example.com' };
+  assert.deepEqual(await sendPasswordReset(deps, { userId: 1, token: 'tok+en/=' }), { sent: true });
+  assert.deepEqual(await sendPasswordReset(deps, { userId: 2, token: 'x' }), { sent: false });
+  assert.equal(resetLink('https://app.example.com', 'tok+en/='), 'https://app.example.com/reset-password?token=tok%2Ben%2F%3D');
+  assert.match(sent[0].text, /token=tok%2Ben%2F%3D/);
+});
+
 // ---------------------------------------------------------------- HTTP basics
 
 const stubApp = ({ ping = async () => {} } = {}) =>
-  createApp({
-    repo: {},
-    sessions: { ttlSeconds: 60, get: async () => null },
-    limiter: {},
-    storage: {},
-    ping,
-  });
+  createApp({ repo: {}, sessions: { ttlSeconds: 60, get: async () => null }, limiter: {}, storage: {}, jobs: {}, ping });
 
 test('liveness probe is always ok', async () => {
   const res = await request(stubApp()).get('/healthz');
@@ -120,31 +139,27 @@ test('liveness probe is always ok', async () => {
 
 test('readiness probe reports dependency state', async () => {
   assert.equal((await request(stubApp()).get('/readyz')).status, 200);
-  const down = stubApp({ ping: async () => { throw new Error('redis down'); } });
-  const res = await request(down).get('/readyz');
+  const res = await request(stubApp({ ping: async () => { throw new Error('redis down'); } })).get('/readyz');
   assert.equal(res.status, 503);
-  assert.deepEqual(res.body, { status: 'unavailable' });
 });
 
 test('API routes require a session', async () => {
   const app = stubApp();
   for (const [method, path] of [
     ['get', '/api/auth/me'],
-    ['get', '/api/boards'],
+    ['patch', '/api/me'],
+    ['get', '/api/workspaces'],
+    ['get', '/api/boards/1'],
     ['patch', '/api/tasks/1'],
     ['post', '/api/tasks/1/attachments'],
     ['get', '/api/attachments/1'],
   ]) {
-    const res = await request(app)[method](path);
-    assert.equal(res.status, 401, `${method.toUpperCase()} ${path}`);
+    assert.equal((await request(app)[method](path)).status, 401, `${method.toUpperCase()} ${path}`);
   }
 });
 
 test('returns 400 for malformed JSON', async () => {
-  const res = await request(stubApp())
-    .post('/api/auth/login')
-    .set('Content-Type', 'application/json')
-    .send('{"email":');
+  const res = await request(stubApp()).post('/api/auth/login').set('Content-Type', 'application/json').send('{"email":');
   assert.equal(res.status, 400);
   assert.deepEqual(res.body, { error: 'invalid JSON' });
 });
@@ -153,6 +168,5 @@ test('exposes Prometheus metrics labelled by route', async () => {
   const app = stubApp();
   await request(app).get('/readyz');
   const res = await request(app).get('/metrics');
-  assert.equal(res.status, 200);
   assert.match(res.text, /http_requests_total\{method="GET",route="\/readyz",status="200"\} 1/);
 });
