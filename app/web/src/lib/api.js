@@ -5,9 +5,12 @@ export class ApiError extends Error {
   }
 }
 
+// Identifies this tab, so live updates about its own changes can be skipped.
+export const clientId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
 // `json` is sent as a JSON body; `file` is sent as the raw request body.
 async function request(path, { method = 'GET', json, file } = {}) {
-  const options = { method, headers: {} };
+  const options = { method, headers: { 'X-Client-Id': clientId } };
   if (json !== undefined) {
     options.headers['Content-Type'] = 'application/json';
     options.body = JSON.stringify(json);

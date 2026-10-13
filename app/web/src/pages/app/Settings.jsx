@@ -262,6 +262,13 @@ const NOTIFICATION_OPTIONS = [
   ['due', 'Due dates', 'Your tasks are due today or tomorrow'],
 ];
 
+const EMAIL_OPTIONS = [
+  ['emailAssigned', 'Assigned to me', 'When someone gives you a task'],
+  ['emailMentioned', 'Mentions', 'When someone @mentions you in a comment'],
+  ['emailComment', 'Comments on my tasks', 'When someone comments on a task assigned to you'],
+  ['emailReminders', 'Due date reminders', 'The day before a task assigned to you is due'],
+];
+
 function NotificationsForm({ user }) {
   const client = useQueryClient();
   const toast = useToast();
@@ -296,14 +303,20 @@ function NotificationsForm({ user }) {
         ))}
       </ul>
       <h2 style={{ marginTop: 8 }}>Email</h2>
+      <p className="muted small">
+        Sent a couple of minutes later and bundled together, and only for things you haven&apos;t already seen in the app. A type that&apos;s off
+        under the bell isn&apos;t emailed either.
+      </p>
       <ul className="switch-list">
-        <li>
-          <div>
-            <b>Reminder emails</b>
-            <span className="faint small">An email the day before a task assigned to you is due</span>
-          </div>
-          <Switch checked={isOn('emailReminders')} onChange={() => toggle('emailReminders')} label="Reminder emails" />
-        </li>
+        {EMAIL_OPTIONS.map(([key, label, hint]) => (
+          <li key={key}>
+            <div>
+              <b>{label}</b>
+              <span className="faint small">{hint}</span>
+            </div>
+            <Switch checked={isOn(key)} onChange={() => toggle(key)} label={label} />
+          </li>
+        ))}
       </ul>
     </div>
   );

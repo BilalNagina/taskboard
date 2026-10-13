@@ -19,6 +19,7 @@ import Icon from '../../../components/Icon.jsx';
 import { useToast } from '../../../components/Toaster.jsx';
 import { Avatar, ConfirmDialog, Dialog, Dropdown, EmptyState, PromptDialog } from '../../../components/ui.jsx';
 import { api } from '../../../lib/api.js';
+import { usePresence } from '../../../lib/live.js';
 import { keys, useBoardActivity, useBoardFull, useMe, useWorkspaces } from '../../../lib/queries.js';
 import { daysUntil, formatDate, PRIORITIES } from '../../../lib/format.js';
 import { useCurrentWorkspace } from '../AppLayout.jsx';
@@ -58,6 +59,7 @@ export default function BoardPage() {
   const [showActivity, setShowActivity] = useState(false);
   const [filters, setFilters] = useState(NO_FILTERS);
   const { data: me } = useMe();
+  const viewing = usePresence(boardId).filter((u) => u.id !== me?.id);
   const snapshot = useRef(null);
   const itemsRef = useRef(items);
   itemsRef.current = items;
@@ -284,6 +286,17 @@ export default function BoardPage() {
             )}
           </div>
           <div className="board-actions">
+            {viewing.length > 0 && (
+              <span className="presence" title={`Also on this board: ${viewing.map((u) => u.name).join(', ')}`}>
+                <span className="presence-dot" aria-hidden="true" />
+                <span className="avatar-stack">
+                  {viewing.slice(0, 3).map((u) => (
+                    <Avatar key={u.id} name={u.name} seed={u.email} url={u.avatarUrl} size="sm" />
+                  ))}
+                </span>
+                <span className="presence-text">{viewing.length === 1 ? `${viewing[0].name.split(' ')[0]} is here` : `${viewing.length} others here`}</span>
+              </span>
+            )}
             <Link to={`/app/w/${board.workspaceId}/members`} className="avatar-stack avatar-stack-lg" title="Workspace members">
               {data.members.slice(0, 5).map((m) => (
                 <Avatar key={m.id} name={m.name} seed={m.email} url={m.avatarUrl} size="sm" />
