@@ -34,7 +34,7 @@ export function workspacesRepo(db) {
         return { ...workspace, role: 'owner', memberCount: 1, boardCount: 0 };
       }),
 
-    getWorkspace: (workspaceId) => one('SELECT id, name, plan FROM workspaces WHERE id = $1', [workspaceId]),
+    getWorkspace: (workspaceId) => one('SELECT id, name, plan, created_at AS "createdAt" FROM workspaces WHERE id = $1', [workspaceId]),
 
     renameWorkspace: (workspaceId, name) =>
       one(

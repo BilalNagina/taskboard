@@ -100,6 +100,7 @@ describe('plan limits and the admin panel', { skip: skipIntegration }, () => {
 
     const admin = (await agent.get(`${url}/admin`)).body;
     assert.equal(admin.workspace.plan, 'free');
+    assert.match(admin.workspace.createdAt, /^\d{4}-\d{2}-\d{2}T/, 'the page shows when the workspace was created');
     assert.equal(admin.workspace.limits.boards, 3);
     assert.deepEqual(admin.plans.map((p) => p.key), ['free', 'pro', 'team']);
     assert.deepEqual(
