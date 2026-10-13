@@ -97,7 +97,7 @@ export default function NotificationBell() {
 
   return (
     <div className="bell" ref={ref}>
-      <button ref={buttonRef} className="icon-btn bell-button" onClick={() => setOpen(!open)} aria-expanded={open} aria-label={unread ? `Notifications, ${unread} unread` : 'Notifications'}>
+      <button ref={buttonRef} data-tour="bell" className="icon-btn bell-button" onClick={() => setOpen(!open)} aria-expanded={open} aria-label={unread ? `Notifications, ${unread} unread` : 'Notifications'}>
         <Icon name="bell" size={18} />
         {unread > 0 && <span className="bell-count">{unread > 99 ? '99+' : unread}</span>}
       </button>

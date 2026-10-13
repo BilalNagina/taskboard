@@ -3,11 +3,14 @@ import { useQueryClient } from '@tanstack/react-query';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import Icon from '../../components/Icon.jsx';
 import NotificationBell from '../../components/NotificationBell.jsx';
+import { TimerPill } from '../../components/Timer.jsx';
 import { useToast } from '../../components/Toaster.jsx';
+import Tour from '../../components/Tour.jsx';
 import { Avatar, Dropdown, Logo, PromptDialog } from '../../components/ui.jsx';
 import { api } from '../../lib/api.js';
 import { keys, useBoards, useMe, useMyInvites, useWorkspaces } from '../../lib/queries.js';
 import { applyTheme } from '../../lib/theme.js';
+import NewBoardDialog from './NewBoardDialog.jsx';
 
 // The workspace the sidebar shows. Pages set it from the URL (workspace page) or from
 // the open board; it's remembered for the next visit.
@@ -29,7 +32,26 @@ export function rememberedWorkspace() {
 export default function AppLayout() {
   const [workspaceId, setWorkspaceIdState] = useState(rememberedWorkspace);
   const [navOpen, setNavOpen] = useState(false);
+  const [touring, setTouring] = useState(false);
+  const { data: me } = useMe();
+  const client = useQueryClient();
   const location = useLocation();
+
+  // New accounts see the welcome tour once.
+  useEffect(() => {
+    if (me && !me.onboardedAt) setTouring(true);
+  }, [me?.id]);
+
+  async function endTour() {
+    setTouring(false);
+    if (me.onboardedAt) return;
+    try {
+      const { user } = await api.updateProfile({ onboarded: true });
+      client.setQueryData(keys.me, user);
+    } catch {
+      // It'll show again next time; nothing else depends on it.
+    }
+  }
 
   const setWorkspaceId = (id) => {
     setWorkspaceIdState(id);
@@ -44,7 +66,7 @@ export default function AppLayout() {
   useEffect(() => setNavOpen(false), [location.pathname]);
 
   return (
-    <WorkspaceContext.Provider value={{ workspaceId, setWorkspaceId }}>
+    <WorkspaceContext.Provider value={{ workspaceId, setWorkspaceId, startTour: () => setTouring(true) }}>
       <div className={`app ${navOpen ? 'nav-open' : ''}`}>
         <Sidebar onClose={() => setNavOpen(false)} />
         <div className="app-scrim" onClick={() => setNavOpen(false)} />
@@ -54,7 +76,8 @@ export default function AppLayout() {
               <Icon name="menu" size={20} />
             </button>
             <Logo to="/app" />
-            <span style={{ marginLeft: 'auto' }}>
+            <span className="app-mobilebar-end">
+              <TimerPill compact />
               <NotificationBell />
             </span>
           </header>
@@ -62,6 +85,7 @@ export default function AppLayout() {
           <Outlet />
         </div>
       </div>
+      {touring && me && <Tour name={me.name.split(' ')[0]} onDone={endTour} />}
     </WorkspaceContext.Provider>
   );
 }
@@ -83,12 +107,6 @@ function Sidebar({ onClose }) {
     navigate(`/app/w/${created.id}`);
   }
 
-  async function createBoard(name) {
-    const board = await api.createBoard(workspace.id, name);
-    await client.invalidateQueries({ queryKey: keys.boards(workspace.id) });
-    navigate(`/app/boards/${board.id}`);
-  }
-
   return (
     <aside className="sidebar">
       <div className="sidebar-head">
@@ -104,7 +122,7 @@ function Sidebar({ onClose }) {
       <Dropdown
         className="ws-switcher"
         trigger={({ toggle, open }) => (
-          <button className="ws-button" onClick={toggle} aria-expanded={open}>
+          <button className="ws-button" onClick={toggle} aria-expanded={open} data-tour="workspace">
             <span className="ws-mark">{workspace?.name?.[0]?.toUpperCase() ?? '·'}</span>
             <span className="ws-name">
               <b>{workspace?.name ?? 'Loading…'}</b>
@@ -141,16 +159,21 @@ function Sidebar({ onClose }) {
             <NavLink to={`/app/w/${workspace.id}`} end className="nav-item">
               <Icon name="home" /> Boards
             </NavLink>
-            <NavLink to={`/app/w/${workspace.id}/dashboard`} className="nav-item">
-              <Icon name="chart" /> Dashboard
+            <div className="nav-group" data-tour="views">
+              <NavLink to={`/app/w/${workspace.id}/dashboard`} className="nav-item">
+                <Icon name="chart" /> Dashboard
+              </NavLink>
+              <NavLink to={`/app/w/${workspace.id}/calendar`} className="nav-item">
+                <Icon name="calendar" /> Calendar
+              </NavLink>
+              <NavLink to={`/app/w/${workspace.id}/search`} className="nav-item">
+                <Icon name="search" /> Search
+              </NavLink>
+            </div>
+            <NavLink to={`/app/w/${workspace.id}/timesheet`} className="nav-item" data-tour="timesheet">
+              <Icon name="timer" /> Timesheet
             </NavLink>
-            <NavLink to={`/app/w/${workspace.id}/calendar`} className="nav-item">
-              <Icon name="calendar" /> Calendar
-            </NavLink>
-            <NavLink to={`/app/w/${workspace.id}/search`} className="nav-item">
-              <Icon name="search" /> Search
-            </NavLink>
-            <NavLink to={`/app/w/${workspace.id}/members`} className="nav-item">
+            <NavLink to={`/app/w/${workspace.id}/members`} className="nav-item" data-tour="members">
               <Icon name="users" /> Members
               <span className="nav-count">{workspace.memberCount}</span>
             </NavLink>
@@ -162,26 +185,29 @@ function Sidebar({ onClose }) {
       </nav>
 
       <div className="sidebar-section">
-        <div className="sidebar-section-head">
-          <span>Boards</span>
-          {canEdit && (
-            <button className="icon-btn" onClick={() => setDialog('board')} aria-label="New board" title="New board">
-              <Icon name="plus" size={16} />
-            </button>
-          )}
+        <div data-tour="boards">
+          <div className="sidebar-section-head">
+            <span>Boards</span>
+            {canEdit && (
+              <button className="icon-btn" onClick={() => setDialog('board')} aria-label="New board" title="New board">
+                <Icon name="plus" size={16} />
+              </button>
+            )}
+          </div>
+          <nav className="sidebar-boards" aria-label="Boards">
+            {boards.map((board) => (
+              <NavLink key={board.id} to={`/app/boards/${board.id}`} className="nav-item">
+                <span className="board-dot" />
+                <span className="nav-text">{board.name}</span>
+                {board.openCount > 0 && <span className="nav-count">{board.openCount}</span>}
+              </NavLink>
+            ))}
+            {workspace && boards.length === 0 && <p className="faint small sidebar-empty">No boards yet</p>}
+          </nav>
         </div>
-        <nav className="sidebar-boards" aria-label="Boards">
-          {boards.map((board) => (
-            <NavLink key={board.id} to={`/app/boards/${board.id}`} className="nav-item">
-              <span className="board-dot" />
-              <span className="nav-text">{board.name}</span>
-              {board.openCount > 0 && <span className="nav-count">{board.openCount}</span>}
-            </NavLink>
-          ))}
-          {workspace && boards.length === 0 && <p className="faint small sidebar-empty">No boards yet</p>}
-        </nav>
       </div>
 
+      <TimerPill />
       <UserMenu />
 
       {dialog === 'workspace' && (
@@ -194,16 +220,7 @@ function Sidebar({ onClose }) {
           onClose={() => setDialog(null)}
         />
       )}
-      {dialog === 'board' && (
-        <PromptDialog
-          title="New board"
-          description={`In ${workspace.name}`}
-          label="Board name"
-          submitLabel="Create board"
-          onSubmit={createBoard}
-          onClose={() => setDialog(null)}
-        />
-      )}
+      {dialog === 'board' && <NewBoardDialog workspace={workspace} onClose={() => setDialog(null)} />}
     </aside>
   );
 }
@@ -216,6 +233,7 @@ const THEMES = [
 
 function UserMenu() {
   const { data: user } = useMe();
+  const { startTour } = useCurrentWorkspace();
   const client = useQueryClient();
   const navigate = useNavigate();
   const toast = useToast();
@@ -256,6 +274,9 @@ function UserMenu() {
       <NavLink to="/app/settings" className="menu-item">
         <Icon name="user" size={16} /> Profile and settings
       </NavLink>
+      <button className="menu-item" onClick={startTour}>
+        <Icon name="compass" size={16} /> Take the tour
+      </button>
       <hr />
       <div className="menu-label">Theme</div>
       <div className="theme-picker" onClick={(e) => e.stopPropagation()}>

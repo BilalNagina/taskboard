@@ -20,7 +20,7 @@ import { useToast } from '../../../components/Toaster.jsx';
 import { Avatar, ConfirmDialog, Dialog, Dropdown, EmptyState, PromptDialog } from '../../../components/ui.jsx';
 import { api } from '../../../lib/api.js';
 import { keys, useBoardActivity, useBoardFull, useMe, useWorkspaces } from '../../../lib/queries.js';
-import { daysUntil, PRIORITIES } from '../../../lib/format.js';
+import { daysUntil, formatDate, PRIORITIES } from '../../../lib/format.js';
 import { useCurrentWorkspace } from '../AppLayout.jsx';
 import { ActivityList } from './Activity.jsx';
 import { CardView } from './Card.jsx';
@@ -247,7 +247,10 @@ export default function BoardPage() {
       }),
     }));
     setActiveKey(null);
-    await run(() => api.moveTask(taskId, column, index));
+    const moved = await run(() => api.moveTask(taskId, column, index));
+    if (moved?.nextOccurrence) {
+      toast(`Done. The next one is due ${formatDate(moved.nextOccurrence.dueDate, { weekday: 'short', day: 'numeric', month: 'short' })}`, 'success');
+    }
   }
 
   const activeCard = activeKey && !isColumnKey(activeKey) ? lookups.cards.get(idOf(activeKey)) : null;

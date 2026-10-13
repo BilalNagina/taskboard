@@ -2,7 +2,7 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import Icon from '../../../components/Icon.jsx';
 import { Avatar } from '../../../components/ui.jsx';
-import { dueInfo, priorityInfo } from '../../../lib/format.js';
+import { dueInfo, priorityInfo, repeatLabel } from '../../../lib/format.js';
 
 // A card on the board. Draggable unless the user can only view.
 export function SortableCard({ card, disabled, ...props }) {
@@ -35,7 +35,7 @@ export function CardView({ ref, card, labels, members, onOpen, className = '', o
   const priority = priorityInfo(card.priority);
   const cardLabels = card.labelIds.map((id) => labels.get(id)).filter(Boolean);
   const assignees = card.assigneeIds.map((id) => members.get(id)).filter(Boolean);
-  const hasFooter = due || card.priority !== 'none' || card.checklistTotal || card.commentCount || card.attachmentCount || card.hasDescription || assignees.length;
+  const hasFooter = due || card.repeat || card.priority !== 'none' || card.checklistTotal || card.commentCount || card.attachmentCount || card.hasDescription || assignees.length;
 
   return (
     <article
@@ -65,6 +65,11 @@ export function CardView({ ref, card, labels, members, onOpen, className = '', o
           {due && (
             <span className={`badge ${due.tone}`}>
               <Icon name="calendar" size={11} /> {due.label}
+            </span>
+          )}
+          {card.repeat && (
+            <span className="kmeta" title={repeatLabel(card.repeat)}>
+              <Icon name="repeat" size={12} />
             </span>
           )}
           {card.checklistTotal > 0 && (

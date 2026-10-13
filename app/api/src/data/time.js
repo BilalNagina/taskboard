@@ -18,10 +18,12 @@ export function timeRepo(db) {
     ]);
 
   return {
-    // The person's running timer, with where its task lives, or null.
+    // The person's running timer, with where its task lives, or null. Elapsed time comes
+    // from the database clock, so a browser with the wrong time still counts correctly.
     runningTimer: (userId) =>
       one(
-        `SELECT e.id, e.task_id AS "taskId", e.started_at AS "startedAt", e.day, t.title, t.board_id AS "boardId", b.workspace_id AS "workspaceId"
+        `SELECT e.id, e.task_id AS "taskId", e.started_at AS "startedAt", e.day, t.title, t.board_id AS "boardId", b.workspace_id AS "workspaceId",
+                floor(extract(epoch FROM now() - e.started_at))::int AS "elapsedSeconds"
            FROM time_entries e JOIN tasks t ON t.id = e.task_id JOIN boards b ON b.id = t.board_id
           WHERE e.user_id = $1 AND e.minutes IS NULL`,
         [userId],

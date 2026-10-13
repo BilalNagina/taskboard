@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate, useParams } from 'react-router';
+import { Link, useParams } from 'react-router';
 import Icon from '../../components/Icon.jsx';
 import { EmptyState, PromptDialog } from '../../components/ui.jsx';
 import { api } from '../../lib/api.js';
 import { keys, useBoards, useMe, useWorkspaces } from '../../lib/queries.js';
 import { useCurrentWorkspace } from './AppLayout.jsx';
+import NewBoardDialog from './NewBoardDialog.jsx';
 
 export default function WorkspaceHome() {
   const workspaceId = Number(useParams().workspaceId);
@@ -15,7 +16,6 @@ export default function WorkspaceHome() {
   const { data: boards = [], isPending: boardsPending } = useBoards(workspaceId);
   const [dialog, setDialog] = useState(null);
   const client = useQueryClient();
-  const navigate = useNavigate();
 
   const workspace = workspaces?.find((w) => w.id === workspaceId);
   useEffect(() => {
@@ -35,12 +35,6 @@ export default function WorkspaceHome() {
 
   const canEdit = workspace.role !== 'viewer';
   const totals = boards.reduce((sum, b) => ({ tasks: sum.tasks + b.taskCount, open: sum.open + b.openCount }), { tasks: 0, open: 0 });
-
-  async function createBoard(name) {
-    const board = await api.createBoard(workspace.id, name);
-    await client.invalidateQueries({ queryKey: keys.boards(workspace.id) });
-    navigate(`/app/boards/${board.id}`);
-  }
 
   async function rename(name) {
     await api.renameWorkspace(workspace.id, name);
@@ -112,9 +106,7 @@ export default function WorkspaceHome() {
         </div>
       )}
 
-      {dialog === 'board' && (
-        <PromptDialog title="New board" description={`In ${workspace.name}`} label="Board name" submitLabel="Create board" onSubmit={createBoard} onClose={() => setDialog(null)} />
-      )}
+      {dialog === 'board' && <NewBoardDialog workspace={workspace} onClose={() => setDialog(null)} />}
       {dialog === 'rename' && (
         <PromptDialog title="Rename workspace" label="Workspace name" initial={workspace.name} submitLabel="Save" onSubmit={rename} onClose={() => setDialog(null)} />
       )}

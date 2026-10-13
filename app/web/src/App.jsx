@@ -12,6 +12,7 @@ import Members from './pages/app/Members.jsx';
 import Dashboard from './pages/app/Dashboard.jsx';
 import Calendar from './pages/app/Calendar.jsx';
 import Search from './pages/app/Search.jsx';
+import Timesheet from './pages/app/Timesheet.jsx';
 import Invite from './pages/Invite.jsx';
 import Settings from './pages/app/Settings.jsx';
 import NotFound from './pages/NotFound.jsx';
@@ -39,6 +40,7 @@ export default function App() {
         <Route path="w/:workspaceId/dashboard" element={<Dashboard />} />
         <Route path="w/:workspaceId/calendar" element={<Calendar />} />
         <Route path="w/:workspaceId/search" element={<Search />} />
+        <Route path="w/:workspaceId/timesheet" element={<Timesheet />} />
         <Route path="boards/:boardId" element={<BoardPage />} />
         <Route path="settings" element={<Settings />} />
       </Route>
