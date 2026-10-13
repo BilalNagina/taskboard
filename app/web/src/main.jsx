@@ -10,6 +10,7 @@ import './styles/base.css';
 import './styles/landing.css';
 import './styles/auth.css';
 import './styles/app.css';
+import './styles/board.css';
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

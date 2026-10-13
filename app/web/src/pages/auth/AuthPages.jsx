@@ -115,7 +115,9 @@ export function Login() {
 
 export function Signup() {
   const signedIn = useSignedIn();
-  const form = useForm({ name: '', email: '', password: '' });
+  const [params] = useSearchParams();
+  // Invite links pass the invited address, so the account matches the invite.
+  const form = useForm({ name: '', email: params.get('email') ?? '', password: '' });
   return (
     <AuthLayout
       title="Create your account"

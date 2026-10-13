@@ -129,9 +129,15 @@ function Sidebar({ onClose }) {
 
       <nav className="sidebar-nav" aria-label="Main">
         {workspace && (
-          <NavLink to={`/app/w/${workspace.id}`} end className="nav-item">
-            <Icon name="home" /> Overview
-          </NavLink>
+          <>
+            <NavLink to={`/app/w/${workspace.id}`} end className="nav-item">
+              <Icon name="home" /> Overview
+            </NavLink>
+            <NavLink to={`/app/w/${workspace.id}/members`} className="nav-item">
+              <Icon name="users" /> Members
+              <span className="nav-count">{workspace.memberCount}</span>
+            </NavLink>
+          </>
         )}
         <NavLink to="/app/settings" className="nav-item">
           <Icon name="settings" /> Settings

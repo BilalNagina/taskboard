@@ -10,7 +10,7 @@
 
 ## The app
 
-A public landing page, accounts with password reset, team workspaces with owner/member/viewer roles, boards with due dates and file attachments, and email reminders. More features are being added in phases (drag-and-drop boards, dashboard, calendar, notifications and more).
+A public landing page; accounts with password reset; team workspaces with email invites and owner/member/viewer roles; drag-and-drop boards with custom columns; tasks with assignees, due dates, priorities, labels, checklists, comments with @mentions and file attachments; a per-board activity log; and email reminders. Dashboard, calendar, search, notifications and more are being added in phases.
 
 - **web:** React (Vite), served as static files by unprivileged NGINX
 - **api:** Express. Accounts with scrypt-hashed passwords and Redis-backed sessions (HttpOnly, SameSite cookies), per-user boards and tasks, file attachments streamed to a private S3 bucket, rate-limited login. `/healthz` (liveness), `/readyz` (checks PostgreSQL and Redis), `/metrics` (Prometheus), structured JSON logs, graceful shutdown
