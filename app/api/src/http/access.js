@@ -25,5 +25,6 @@ export function createAccess(repo) {
     checklistItem: checker(repo.checklistAccess, 'checklist item'),
     comment: checker(repo.commentAccess, 'comment'),
     attachment: checker(repo.attachmentAccess, 'attachment'),
+    timeEntry: checker(repo.timeEntryAccess, 'time entry'),
   };
 }

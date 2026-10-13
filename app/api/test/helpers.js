@@ -48,14 +48,18 @@ export async function setupApi() {
     ping: () => Promise.all([db.ping(), redis.ping()]),
   });
 
-  // Registers a fresh user; returns a cookie-carrying agent, their workspace and first board.
+  // Registers a fresh user; returns a cookie-carrying agent, their workspace and an empty
+  // board. New accounts come with a sample board full of cards, which most tests don't
+  // want counted, so it's swapped for a blank one (the sample board has its own test).
   async function signUp(name = 'Ada') {
     const agent = request.agent(app);
     const email = `${name.toLowerCase()}-${randomUUID()}@example.com`;
     const res = await agent.post('/api/auth/register').send({ name, email, password: PASSWORD });
     assert.equal(res.status, 201, JSON.stringify(res.body));
     const [workspace] = (await agent.get('/api/workspaces')).body;
-    const [board] = (await agent.get(`/api/workspaces/${workspace.id}/boards`)).body;
+    const [sample] = (await agent.get(`/api/workspaces/${workspace.id}/boards`)).body;
+    assert.equal((await agent.delete(`/api/boards/${sample.id}`)).status, 204);
+    const board = (await agent.post(`/api/workspaces/${workspace.id}/boards`).send({ name: 'My tasks' })).body;
     return { agent, email, user: res.body.user, workspace, board };
   }
 

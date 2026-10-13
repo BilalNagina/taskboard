@@ -1,19 +1,19 @@
-import { seedBoard } from './boards.js';
+import { applyTemplate } from './boards.js';
 
 // The avatar URL carries a version so browsers fetch the new image after a change.
 export const avatarUrl = (a) =>
   `CASE WHEN ${a}.avatar_key IS NOT NULL THEN '/api/avatars/' || ${a}.id || '?v=' || floor(extract(epoch FROM ${a}.avatar_updated_at))::bigint END`;
 
 export const USER = `u.id, u.email, u.name, u.theme, u.created_at AS "createdAt", ${avatarUrl('u')} AS "avatarUrl",
-  u.notification_prefs AS "notificationPrefs"`;
+  u.notification_prefs AS "notificationPrefs", u.onboarded_at AS "onboardedAt"`;
 const UNIQUE_VIOLATION = '23505';
 
 export function usersRepo(db) {
   const one = async (text, params) => (await db.query(text, params)).rows[0] ?? null;
 
   return {
-    // A new account comes with a personal workspace (owner) and a first board.
-    // Returns null if the email is taken.
+    // A new account comes with a personal workspace (owner) and a sample board to try
+    // things on. Returns null if the email is taken.
     createUserWithWorkspace({ email, name, passwordHash }) {
       return db
         .tx(async (q) => {
@@ -35,10 +35,12 @@ export function usersRepo(db) {
             await q.query('INSERT INTO boards (workspace_id, created_by, name) VALUES ($1, $2, $3) RETURNING id', [
               workspace.id,
               user.id,
-              'My tasks',
+              'Getting started',
             ])
           ).rows[0];
-          await seedBoard(q, board.id);
+          // The sample cards aren't "created by" the new user, so their due dates don't send
+          // reminder emails about tasks they never wrote.
+          await applyTemplate(q, board.id, 'starter', { userId: user.id, createdBy: null });
           return user;
         })
         .catch((err) => {
@@ -59,12 +61,13 @@ export function usersRepo(db) {
 
     // Notification preferences are merged into the saved ones, so the client can send
     // just the switch that changed.
-    updateProfile: (id, { name, theme, notificationPrefs }) =>
+    updateProfile: (id, { name, theme, notificationPrefs, onboarded }) =>
       one(
         `UPDATE users u SET name = COALESCE($2, name), theme = COALESCE($3, theme),
-                notification_prefs = notification_prefs || COALESCE($4::jsonb, '{}')
+                notification_prefs = notification_prefs || COALESCE($4::jsonb, '{}'),
+                onboarded_at = CASE WHEN $5 THEN COALESCE(onboarded_at, now()) ELSE onboarded_at END
           WHERE id = $1 RETURNING ${USER}`,
-        [id, name ?? null, theme ?? null, notificationPrefs ? JSON.stringify(notificationPrefs) : null],
+        [id, name ?? null, theme ?? null, notificationPrefs ? JSON.stringify(notificationPrefs) : null, onboarded === true],
       ),
 
     // Returns the previous avatar's storage key so the caller can delete the old file.

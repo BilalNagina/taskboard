@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { REPEATS } from '../recurrence.js';
+import { TEMPLATE_KEYS } from '../templates.js';
 import { HttpError } from './errors.js';
 
 const text = (field, max) =>
@@ -29,6 +31,14 @@ const priority = z.enum(['none', 'low', 'medium', 'high', 'urgent'], 'priority m
 const role = z.enum(['owner', 'member', 'viewer'], 'role must be owner, member or viewer');
 const color = z.enum(['gray', 'red', 'amber', 'green', 'teal', 'blue', 'violet', 'pink'], 'unknown label colour');
 const description = z.string('description must be text').max(5000, 'description must be at most 5000 characters');
+const repeat = z.enum(REPEATS, 'repeat must be daily, weekdays, weekly, monthly or null').nullable();
+const day = (field) => z.iso.date(`${field} must be a date (YYYY-MM-DD)`);
+// A date range in a query string, at most `days` long.
+const range = (days) =>
+  z
+    .object({ from: day('from'), to: day('to') })
+    .refine((v) => v.from <= v.to, 'from must be on or before to')
+    .refine((v) => (Date.parse(v.to) - Date.parse(v.from)) / 86_400_000 <= days, `the range can be at most ${days} days`);
 
 export const schemas = {
   register: z.object({ name: text('name', 80), email, password: newPassword }),
@@ -55,6 +65,8 @@ export const schemas = {
         }, 'notificationPrefs must be an object of true/false switches')
         .strict('unknown notification preference')
         .optional(),
+      // Finishing or skipping the welcome tour; it can't be un-finished.
+      onboarded: z.literal(true, 'onboarded can only be true').optional(),
     })
     .refine(atLeastOne, 'nothing to update'),
   changePassword: z.object({
@@ -63,12 +75,18 @@ export const schemas = {
   }),
   workspace: z.object({ name: text('workspace name', 80) }),
   board: z.object({ name: text('board name', 80) }),
+  newBoard: z.object({
+    name: text('board name', 80),
+    template: z.enum(TEMPLATE_KEYS, `template must be one of ${TEMPLATE_KEYS.join(', ')}`).optional(),
+    today: day('today').optional(),
+  }),
   newTask: z.object({
     title: text('title', 200),
     columnId: id('columnId').optional(),
     dueDate: dueDate.optional(),
     priority: priority.optional(),
     description: description.optional(),
+    repeat: repeat.optional(),
     assigneeIds: ids('assignee').optional(),
     labelIds: ids('label').optional(),
   }),
@@ -79,6 +97,7 @@ export const schemas = {
       dueDate: dueDate.optional(),
       priority: priority.optional(),
       description: description.optional(),
+      repeat: repeat.optional(),
       assigneeIds: ids('assignee').optional(),
       labelIds: ids('label').optional(),
     })
@@ -100,14 +119,7 @@ export const schemas = {
   memberRole: z.object({ role }),
   // Query strings arrive as text, so numbers and dates are parsed from strings here.
   today: z.object({ today: z.iso.date('today must be a date (YYYY-MM-DD)').optional() }),
-  calendar: z
-    .object({
-      from: z.iso.date('from must be a date (YYYY-MM-DD)'),
-      to: z.iso.date('to must be a date (YYYY-MM-DD)'),
-      boardId: z.coerce.number().int().positive('boardId must be an id').optional(),
-    })
-    .refine((v) => v.from <= v.to, 'from must be on or before to')
-    .refine((v) => (Date.parse(v.to) - Date.parse(v.from)) / 86_400_000 <= 62, 'the range can be at most 62 days'),
+  calendar: range(62).and(z.object({ boardId: z.coerce.number().int().positive('boardId must be an id').optional() })),
   search: z.object({
     q: z.string().max(200, 'search text must be at most 200 characters').optional(),
     assignee: z.union([z.literal('me'), z.literal('none'), z.coerce.number().int().positive()], 'assignee must be me, none or an id').optional(),
@@ -118,6 +130,13 @@ export const schemas = {
     today: z.iso.date('today must be a date (YYYY-MM-DD)').optional(),
   }),
   markRead: z.object({ ids: z.array(z.number().int().positive(), 'ids must be a list of ids').max(200).optional() }),
+  startTimer: z.object({ today: day('today') }),
+  timeEntry: z.object({
+    day: day('day'),
+    minutes: z.number('minutes must be a number').int('minutes must be whole').min(1, 'minutes must be 1 to 1440').max(1440, 'minutes must be 1 to 1440'),
+    note: z.string('note must be text').trim().max(200, 'note must be at most 200 characters').optional(),
+  }),
+  timesheet: range(62).and(z.object({ userId: z.coerce.number().int().positive('userId must be an id').optional() })),
   inviteToken: z.object({ token: z.string('token is required').min(20, 'this invite link is invalid').max(200, 'this invite link is invalid') }),
 };
 

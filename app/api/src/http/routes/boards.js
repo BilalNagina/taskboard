@@ -1,5 +1,6 @@
 import express from 'express';
 import { boardCsv, writeBoardPdf } from '../../exporters.js';
+import { templateSummaries } from '../../templates.js';
 import { HttpError } from '../errors.js';
 import { parseId, schemas, validate } from '../validation.js';
 
@@ -9,6 +10,10 @@ export function boardRoutes({ repo, access, session, removeFiles, log }) {
   router.use(session.requireAuth);
 
   // ------------------------------------------------------------ boards
+
+  router.get('/templates', (req, res) => {
+    res.json(templateSummaries());
+  });
 
   router.get('/boards/:id', async (req, res) => {
     const id = parseId(req.params.id, 'board');
