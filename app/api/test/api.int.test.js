@@ -1,80 +1,25 @@
-// End-to-end API tests against a real PostgreSQL and Redis (CI provides both).
-// File storage is in memory and jobs are captured, so no S3 or worker is needed.
+// End-to-end API tests: accounts, workspaces, roles, files and reminders.
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { Readable } from 'node:stream';
 import { Queue } from 'bullmq';
 import request from 'supertest';
 import { createRepo } from '../src/data/index.js';
 import { createDb } from '../src/db.js';
-import { createApp } from '../src/http/app.js';
 import { MAX_UPLOAD_BYTES } from '../src/http/routes/attachments.js';
 import { migrate } from '../src/migrate.js';
 import { queueConnection } from '../src/queue.js';
-import { createRedis } from '../src/redis.js';
 import { scanDueTasks, sendReminder } from '../src/reminders.js';
-import { createRateLimiter, createSessionStore } from '../src/sessions.js';
+import { DATABASE_URL, isoDate, PASSWORD, REDIS_URL, setupApi, skipIntegration } from './helpers.js';
 
-const { DATABASE_URL, REDIS_URL } = process.env;
-const skip = !(DATABASE_URL && REDIS_URL) && 'DATABASE_URL and REDIS_URL not set';
-const PASSWORD = 'correct horse';
-
-function memoryStorage() {
-  const files = new Map();
-  return {
-    files,
-    put: async (key, body, contentType) => files.set(key, { body: Buffer.from(body), contentType }),
-    get: async (key) => {
-      const file = files.get(key);
-      if (!file) throw Object.assign(new Error('missing'), { name: 'NoSuchKey' });
-      return { body: Readable.from([file.body]), size: file.body.length };
-    },
-    remove: async (keys) => keys.forEach((key) => files.delete(key)),
-  };
-}
-
-const isoDate = (offsetDays) => new Date(Date.now() + offsetDays * 86_400_000).toISOString().slice(0, 10);
-
-describe('API against PostgreSQL and Redis', { skip }, () => {
-  let db, redis, repo, storage, jobs, app;
+describe('API against PostgreSQL and Redis', { skip: skipIntegration }, () => {
+  let db, repo, storage, jobs, app, signUp, addMember, close;
 
   before(async () => {
-    db = createDb(DATABASE_URL);
-    redis = createRedis(REDIS_URL);
-    await migrate(db.pool);
-    await redis.flushdb(); // test Redis only: clears rate-limit counters between runs
-    repo = createRepo(db);
-    storage = memoryStorage();
-    jobs = { added: [], add: async (name, data, opts) => jobs.added.push({ name, data, opts }) };
-    app = createApp({
-      repo,
-      sessions: createSessionStore(redis),
-      limiter: createRateLimiter(redis),
-      storage,
-      jobs,
-      ping: () => Promise.all([db.ping(), redis.ping()]),
-    });
+    ({ db, repo, storage, jobs, app, signUp, addMember, close } = await setupApi());
   });
 
-  after(async () => {
-    await db.close();
-    await redis.quit();
-  });
-
-  // Registers a fresh user; returns a cookie-carrying agent, their workspace and first board.
-  async function signUp(name = 'Ada') {
-    const agent = request.agent(app);
-    const email = `${name.toLowerCase()}-${randomUUID()}@example.com`;
-    const res = await agent.post('/api/auth/register').send({ name, email, password: PASSWORD });
-    assert.equal(res.status, 201);
-    const [workspace] = (await agent.get('/api/workspaces')).body;
-    const [board] = (await agent.get(`/api/workspaces/${workspace.id}/boards`)).body;
-    return { agent, email, user: res.body.user, workspace, board };
-  }
-
-  const addMember = (workspaceId, userId, role) =>
-    db.query('INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1, $2, $3)', [workspaceId, userId, role]);
+  after(() => close());
 
   test('readiness checks both PostgreSQL and Redis', async () => {
     assert.equal((await request(app).get('/readyz')).status, 200);
@@ -232,7 +177,7 @@ describe('API against PostgreSQL and Redis', { skip }, () => {
     const { body: task } = await owner.agent.post(`/api/boards/${owner.board.id}/tasks`).send({ title: 'Shared task' });
 
     // Viewer: can read everything, change nothing.
-    assert.equal((await viewer.agent.get(`/api/boards/${owner.board.id}/tasks`)).status, 200);
+    assert.equal((await viewer.agent.get(`/api/boards/${owner.board.id}/full`)).status, 200);
     assert.equal((await viewer.agent.get(`/api/boards/${owner.board.id}`)).body.role, 'viewer');
     assert.equal((await viewer.agent.get('/api/workspaces')).body.some((w) => w.id === ws && w.role === 'viewer'), true);
     for (const res of await Promise.all([
@@ -254,7 +199,7 @@ describe('API against PostgreSQL and Redis', { skip }, () => {
     // Outsider: 404 on everything, so they can't even confirm it exists.
     for (const res of await Promise.all([
       outsider.agent.get(`/api/boards/${owner.board.id}`),
-      outsider.agent.get(`/api/boards/${owner.board.id}/tasks`),
+      outsider.agent.get(`/api/boards/${owner.board.id}/full`),
       outsider.agent.get(`/api/workspaces/${ws}/boards`),
       outsider.agent.patch(`/api/tasks/${task.id}`).send({ done: false }),
       outsider.agent.delete(`/api/boards/${owner.board.id}`),
@@ -267,20 +212,27 @@ describe('API against PostgreSQL and Redis', { skip }, () => {
 
   // ------------------------------------------------------------ tasks and files
 
-  test('tasks: due dates, updates, ordering and deletion', async () => {
+  test('tasks: due dates, updates, done moves to the Done column, deletion', async () => {
     const { agent, board } = await signUp();
     const url = `/api/boards/${board.id}/tasks`;
     assert.equal((await agent.post(url).send({ title: 'Bad date', dueDate: '2026-02-30' })).status, 400);
 
     const { body: later } = await agent.post(url).send({ title: 'Later', dueDate: isoDate(9) });
-    const { body: soon } = await agent.post(url).send({ title: 'Soon', dueDate: isoDate(1) });
+    const { body: soon } = await agent.post(url).send({ title: 'Soon', dueDate: isoDate(1), priority: 'high' });
     const { body: undated } = await agent.post(url).send({ title: 'Someday' });
     assert.equal(soon.dueDate, isoDate(1));
-    assert.deepEqual(soon.attachments, []);
-    assert.deepEqual((await agent.get(url)).body.map((t) => t.title), ['Soon', 'Later', 'Someday']);
+    assert.equal(soon.priority, 'high');
+    const full = (await agent.get(`/api/boards/${board.id}/full`)).body;
+    const [todo, , doneColumn] = full.columns;
+    assert.deepEqual(full.columns.map((c) => c.name), ['To do', 'In progress', 'Done']);
+    assert.deepEqual(full.cards.filter((c) => c.columnId === todo.id).map((c) => c.title), ['Later', 'Soon', 'Someday'], 'new cards go to the end of the first column');
 
-    await agent.patch(`/api/tasks/${soon.id}`).send({ done: true });
-    assert.equal((await agent.get(url)).body.at(-1).title, 'Soon', 'done tasks sort last');
+    const done = await agent.patch(`/api/tasks/${soon.id}`).send({ done: true });
+    assert.equal(done.body.done, true);
+    assert.equal(done.body.columnId, doneColumn.id, 'ticking done moves the card to the Done column');
+    const reopened = await agent.patch(`/api/tasks/${soon.id}`).send({ done: false });
+    assert.equal(reopened.body.columnId, todo.id, 'unticking moves it back');
+
     const cleared = await agent.patch(`/api/tasks/${later.id}`).send({ dueDate: null, title: 'Later, undated' });
     assert.equal(cleared.body.dueDate, null);
     assert.equal(cleared.body.title, 'Later, undated');
@@ -370,6 +322,7 @@ describe('migrations', { skip: !DATABASE_URL && 'DATABASE_URL not set' }, () => 
         '001_create_tasks.sql',
         '002_accounts_boards_attachments.sql',
         '003_workspaces_password_resets.sql',
+        '004_columns_details_invites_activity.sql',
       ]);
     } finally {
       await Promise.all(dbs.map((db) => db.close()));

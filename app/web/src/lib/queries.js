@@ -18,7 +18,11 @@ export const keys = {
   workspaces: ['workspaces'],
   boards: (workspaceId) => ['boards', workspaceId],
   board: (id) => ['board', id],
-  tasks: (boardId) => ['tasks', boardId],
+  boardFull: (id) => ['boardFull', id],
+  task: (id) => ['task', id],
+  activity: (boardId) => ['activity', boardId],
+  members: (workspaceId) => ['members', workspaceId],
+  invites: (workspaceId) => ['invites', workspaceId],
 };
 
 // null when signed out (401), the user otherwise.
@@ -44,8 +48,19 @@ export const useBoards = (workspaceId) =>
 
 export const useBoard = (id) => useQuery({ queryKey: keys.board(id), queryFn: () => api.board(id), enabled: Boolean(id) });
 
-export const useTasks = (boardId) =>
-  useQuery({ queryKey: keys.tasks(boardId), queryFn: () => api.tasks(boardId), enabled: Boolean(boardId) });
+export const useBoardFull = (id) =>
+  useQuery({ queryKey: keys.boardFull(id), queryFn: () => api.boardFull(id), enabled: Boolean(id) });
+
+export const useTask = (id) => useQuery({ queryKey: keys.task(id), queryFn: () => api.task(id), enabled: Boolean(id) });
+
+export const useBoardActivity = (boardId, enabled = true) =>
+  useQuery({ queryKey: keys.activity(boardId), queryFn: () => api.boardActivity(boardId), enabled: Boolean(boardId) && enabled });
+
+export const useMembers = (workspaceId) =>
+  useQuery({ queryKey: keys.members(workspaceId), queryFn: () => api.members(workspaceId), enabled: Boolean(workspaceId) });
+
+export const useInvites = (workspaceId, enabled = true) =>
+  useQuery({ queryKey: keys.invites(workspaceId), queryFn: () => api.invites(workspaceId), enabled: Boolean(workspaceId) && enabled });
 
 // A mutation that refreshes the given query keys when it succeeds.
 export function useAction(fn, { invalidate = [], onSuccess } = {}) {

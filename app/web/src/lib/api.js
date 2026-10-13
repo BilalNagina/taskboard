@@ -50,11 +50,42 @@ export const api = {
   renameBoard: (id, name) => request(`/boards/${id}`, { method: 'PATCH', json: { name } }),
   deleteBoard: (id) => request(`/boards/${id}`, { method: 'DELETE' }),
 
-  // tasks and files
-  tasks: (boardId) => request(`/boards/${boardId}/tasks`),
+  boardFull: (id) => request(`/boards/${id}/full`),
+  boardActivity: (id, before) => request(`/boards/${id}/activity${before ? `?before=${before}` : ''}`),
+
+  // columns and labels
+  createColumn: (boardId, name) => request(`/boards/${boardId}/columns`, { method: 'POST', json: { name } }),
+  updateColumn: (id, changes) => request(`/columns/${id}`, { method: 'PATCH', json: changes }),
+  moveColumn: (id, index) => request(`/columns/${id}/move`, { method: 'POST', json: { index } }),
+  deleteColumn: (id, moveTo) => request(`/columns/${id}${moveTo ? `?moveTo=${moveTo}` : ''}`, { method: 'DELETE' }),
+  createLabel: (boardId, label) => request(`/boards/${boardId}/labels`, { method: 'POST', json: label }),
+  deleteLabel: (id) => request(`/labels/${id}`, { method: 'DELETE' }),
+
+  // tasks
+  task: (id) => request(`/tasks/${id}`),
   createTask: (boardId, task) => request(`/boards/${boardId}/tasks`, { method: 'POST', json: task }),
   updateTask: (id, changes) => request(`/tasks/${id}`, { method: 'PATCH', json: changes }),
+  moveTask: (id, columnId, index) => request(`/tasks/${id}/move`, { method: 'POST', json: { columnId, index } }),
   deleteTask: (id) => request(`/tasks/${id}`, { method: 'DELETE' }),
+  addChecklistItem: (taskId, text) => request(`/tasks/${taskId}/checklist`, { method: 'POST', json: { text } }),
+  updateChecklistItem: (id, changes) => request(`/checklist/${id}`, { method: 'PATCH', json: changes }),
+  deleteChecklistItem: (id) => request(`/checklist/${id}`, { method: 'DELETE' }),
+  addComment: (taskId, body, mentions) => request(`/tasks/${taskId}/comments`, { method: 'POST', json: { body, mentions } }),
+  updateComment: (id, body, mentions) => request(`/comments/${id}`, { method: 'PATCH', json: { body, mentions } }),
+  deleteComment: (id) => request(`/comments/${id}`, { method: 'DELETE' }),
+
+  // members and invites
+  members: (workspaceId) => request(`/workspaces/${workspaceId}/members`),
+  setMemberRole: (workspaceId, userId, role) => request(`/workspaces/${workspaceId}/members/${userId}`, { method: 'PATCH', json: { role } }),
+  removeMember: (workspaceId, userId) => request(`/workspaces/${workspaceId}/members/${userId}`, { method: 'DELETE' }),
+  invites: (workspaceId) => request(`/workspaces/${workspaceId}/invites`),
+  invite: (workspaceId, email, role) => request(`/workspaces/${workspaceId}/invites`, { method: 'POST', json: { email, role } }),
+  resendInvite: (id) => request(`/invites/${id}/resend`, { method: 'POST' }),
+  revokeInvite: (id) => request(`/invites/${id}`, { method: 'DELETE' }),
+  lookupInvite: (token) => request('/invites/lookup', { method: 'POST', json: { token } }),
+  acceptInvite: (token) => request('/invites/accept', { method: 'POST', json: { token } }),
+
+  // files
   upload: (taskId, file) => request(`/tasks/${taskId}/attachments`, { method: 'POST', file }),
   deleteAttachment: (id) => request(`/attachments/${id}`, { method: 'DELETE' }),
   downloadUrl: (id) => `/api/attachments/${id}`,

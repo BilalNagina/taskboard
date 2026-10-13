@@ -1,3 +1,5 @@
+import { seedBoard } from './boards.js';
+
 export const USER = 'u.id, u.email, u.name, u.theme, u.created_at AS "createdAt"';
 const UNIQUE_VIOLATION = '23505';
 
@@ -24,11 +26,14 @@ export function usersRepo(db) {
             workspace.id,
             user.id,
           ]);
-          await q.query('INSERT INTO boards (workspace_id, created_by, name) VALUES ($1, $2, $3)', [
-            workspace.id,
-            user.id,
-            'My tasks',
-          ]);
+          const board = (
+            await q.query('INSERT INTO boards (workspace_id, created_by, name) VALUES ($1, $2, $3) RETURNING id', [
+              workspace.id,
+              user.id,
+              'My tasks',
+            ])
+          ).rows[0];
+          await seedBoard(q, board.id);
           return user;
         })
         .catch((err) => {

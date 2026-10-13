@@ -7,7 +7,9 @@ import { ForgotPassword, Login, ResetPassword, Signup } from './pages/auth/AuthP
 import AppLayout from './pages/app/AppLayout.jsx';
 import AppHome from './pages/app/AppHome.jsx';
 import WorkspaceHome from './pages/app/WorkspaceHome.jsx';
-import BoardPage from './pages/app/BoardPage.jsx';
+import BoardPage from './pages/app/board/BoardPage.jsx';
+import Members from './pages/app/Members.jsx';
+import Invite from './pages/Invite.jsx';
 import Settings from './pages/app/Settings.jsx';
 import NotFound from './pages/NotFound.jsx';
 
@@ -26,9 +28,11 @@ export default function App() {
       <Route path="/signup" element={<GuestOnly><Signup /></GuestOnly>} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
+      <Route path="/invite/:token" element={<Invite />} />
       <Route path="/app" element={<RequireAuth><AppLayout /></RequireAuth>}>
         <Route index element={<AppHome />} />
         <Route path="w/:workspaceId" element={<WorkspaceHome />} />
+        <Route path="w/:workspaceId/members" element={<Members />} />
         <Route path="boards/:boardId" element={<BoardPage />} />
         <Route path="settings" element={<Settings />} />
       </Route>

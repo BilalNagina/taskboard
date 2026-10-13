@@ -2,11 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import request from 'supertest';
 import { roleAtLeast } from '../src/data/index.js';
-import { buildPasswordResetEmail, buildReminderEmail } from '../src/emails.js';
+import { buildInviteEmail, buildPasswordResetEmail, buildReminderEmail } from '../src/emails.js';
 import { createApp } from '../src/http/app.js';
 import { HttpError } from '../src/http/errors.js';
 import { parseContentType, parseFilename, parseId, schemas, validate } from '../src/http/validation.js';
-import { resetLink, sendPasswordReset } from '../src/jobs.js';
+import { inviteLink, resetLink, sendInvite, sendPasswordReset } from '../src/jobs.js';
 import { hashPassword, verifyPassword } from '../src/passwords.js';
 import { describeDue, reminderJobId, scanDueTasks, sendReminder } from '../src/reminders.js';
 
@@ -71,7 +71,17 @@ test('hashes and verifies passwords', async () => {
 
 // ---------------------------------------------------------------- emails and jobs
 
-const dueTask = { id: 4, title: 'Renew <TLS> cert', dueDate: '2026-10-14', boardName: 'Ops', email: 'ada@example.com', userName: 'Ada' };
+const dueTask = {
+  id: 4,
+  boardId: 2,
+  title: 'Renew <TLS> cert',
+  dueDate: '2026-10-14',
+  boardName: 'Ops',
+  recipients: [
+    { email: 'ada@example.com', name: 'Ada' },
+    { email: 'grace@example.com', name: 'Grace' },
+  ],
+};
 
 test('describes how soon a task is due', () => {
   assert.equal(describeDue('2026-10-12', '2026-10-13'), 'overdue');
@@ -81,10 +91,17 @@ test('describes how soon a task is due', () => {
 });
 
 test('reminder and reset emails escape user content', () => {
-  const reminder = buildReminderEmail(dueTask, 'https://app.example.com', 'due tomorrow');
+  const reminder = buildReminderEmail({ ...dueTask, email: 'ada@example.com', userName: 'Ada' }, 'https://app.example.com/app/boards/2?task=4', 'due tomorrow');
   assert.equal(reminder.subject, 'Reminder: "Renew <TLS> cert" is due tomorrow');
   assert.match(reminder.html, /Renew &lt;TLS&gt; cert/);
   assert.doesNotMatch(reminder.html, /<TLS>/);
+  assert.match(reminder.text, /boards\/2\?task=4/);
+
+  const invite = buildInviteEmail({ email: 'bo@example.com', inviterName: 'Ada <script>', workspaceName: 'Acme', role: 'member' }, 'https://app.example.com/invite/tok', 7);
+  assert.equal(invite.to, 'bo@example.com');
+  assert.equal(invite.subject, 'Ada <script> invited you to Acme on Tasklane');
+  assert.match(invite.text, /as a member/);
+  assert.doesNotMatch(invite.html, /<script>/);
 
   const reset = buildPasswordResetEmail({ name: '<b>Ada</b>', email: 'ada@example.com' }, 'https://app.example.com/reset-password?token=abc', 30);
   assert.equal(reset.to, 'ada@example.com');
@@ -102,7 +119,7 @@ test('scan queues one email job per due task, keyed by task and due date', async
   assert.equal(reminderJobId({ id: 4, dueDate: '2026-10-14' }).includes(':'), false, 'BullMQ rejects ":" in ids');
 });
 
-test('sends a reminder only if the task still needs one', async () => {
+test('sends a reminder to every recipient, only if the task still needs one', async () => {
   const sent = [];
   const marked = [];
   const repo = {
@@ -112,7 +129,8 @@ test('sends a reminder only if the task still needs one', async () => {
   const deps = { repo, mailer: { send: async (msg) => sent.push(msg) }, appUrl: 'https://app.example.com' };
   assert.deepEqual(await sendReminder(deps, { taskId: 4, dueDate: '2026-10-14' }, '2026-10-13'), { sent: true });
   assert.deepEqual(await sendReminder(deps, { taskId: 5, dueDate: '2026-10-14' }, '2026-10-13'), { sent: false });
-  assert.equal(sent.length, 1);
+  assert.deepEqual(sent.map((m) => m.to), ['ada@example.com', 'grace@example.com']);
+  assert.match(sent[0].text, /app\/boards\/2\?task=4/);
   assert.deepEqual(marked, [[4, '2026-10-14']]);
 });
 
@@ -124,6 +142,18 @@ test('password-reset job emails a link with the token', async () => {
   assert.deepEqual(await sendPasswordReset(deps, { userId: 2, token: 'x' }), { sent: false });
   assert.equal(resetLink('https://app.example.com', 'tok+en/='), 'https://app.example.com/reset-password?token=tok%2Ben%2F%3D');
   assert.match(sent[0].text, /token=tok%2Ben%2F%3D/);
+});
+
+test('invite job emails the invitee unless the invite is gone', async () => {
+  const sent = [];
+  const invite = { id: 3, email: 'bo@example.com', role: 'viewer', workspaceName: 'Acme', invitedBy: { name: 'Ada' } };
+  const repo = { getInvite: async (id) => (id === 3 ? invite : null) };
+  const deps = { repo, mailer: { send: async (msg) => sent.push(msg) }, appUrl: 'https://app.example.com' };
+  assert.deepEqual(await sendInvite(deps, { inviteId: 3, token: 'abc' }), { sent: true });
+  assert.deepEqual(await sendInvite(deps, { inviteId: 9, token: 'abc' }), { sent: false });
+  assert.equal(inviteLink('https://app.example.com', 'a/b'), 'https://app.example.com/invite/a%2Fb');
+  assert.match(sent[0].text, /invite\/abc/);
+  assert.match(sent[0].subject, /Ada invited you to Acme/);
 });
 
 // ---------------------------------------------------------------- HTTP basics

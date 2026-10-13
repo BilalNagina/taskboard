@@ -6,12 +6,14 @@ import { HttpError } from './errors.js';
 import { attachmentRoutes } from './routes/attachments.js';
 import { accountRoutes, authRoutes } from './routes/auth.js';
 import { boardRoutes } from './routes/boards.js';
+import { memberRoutes } from './routes/members.js';
+import { taskRoutes } from './routes/tasks.js';
 import { workspaceRoutes } from './routes/workspaces.js';
 import { createSessionHelpers } from './session.js';
 
 const QUIET_PATHS = new Set(['/healthz', '/readyz', '/metrics']);
 
-export function createApp({ repo, sessions, limiter, storage, jobs, ping, logger, cookieSecure = false }) {
+export function createApp({ repo, sessions, limiter, storage, jobs, ping, logger, cookieSecure = false, appUrl = '' }) {
   const app = express();
   app.disable('x-powered-by');
   // Requests arrive through the NGINX proxy on the private Docker network; trust its
@@ -74,16 +76,26 @@ export function createApp({ repo, sessions, limiter, storage, jobs, ping, logger
     }
   }
 
+  // Records an activity entry. `a` is an access row (workspace and board ids); taskId is
+  // passed explicitly because a deleted task can't be referenced.
+  async function log(req, a, type, data = {}, taskId = null) {
+    await repo.logActivity({ workspaceId: a.workspaceId, boardId: a.boardId ?? null, taskId, actorId: req.user.id, type, data });
+  }
+
   const session = createSessionHelpers({ sessions, repo, cookieSecure });
-  const deps = { repo, sessions, limiter, storage, jobs, session, removeFiles, access: createAccess(repo) };
+  const deps = { repo, sessions, limiter, storage, jobs, session, removeFiles, log, appUrl, access: createAccess(repo) };
 
   // Raw-body uploads first, before the JSON parser.
   app.use('/api', attachmentRoutes(deps));
-  app.use(express.json({ limit: '10kb' }));
+  app.use(express.json({ limit: '16kb' }));
   app.use('/api/auth', authRoutes(deps));
   app.use('/api/me', accountRoutes(deps));
+  // Before the routers below, which require sign-in for everything under /api: the
+  // invite lookup is public.
+  app.use('/api', memberRoutes(deps));
   app.use('/api/workspaces', workspaceRoutes(deps));
   app.use('/api', boardRoutes(deps));
+  app.use('/api', taskRoutes(deps));
 
   app.use((req, res) => res.status(404).json({ error: 'not found' }));
   // Express recognises error handlers by their four parameters, so _next must stay.
