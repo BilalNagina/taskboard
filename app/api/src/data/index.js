@@ -5,6 +5,7 @@ import { membersRepo } from './members.js';
 import { notificationsRepo } from './notifications.js';
 import { remindersRepo } from './reminders.js';
 import { tasksRepo } from './tasks.js';
+import { timeRepo } from './time.js';
 import { usersRepo } from './users.js';
 import { workspacesRepo } from './workspaces.js';
 
@@ -24,5 +25,6 @@ export function createRepo(db) {
     ...insightsRepo(db),
     ...notificationsRepo(db),
     ...remindersRepo(db),
+    ...timeRepo(db),
   };
 }

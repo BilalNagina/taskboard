@@ -2,10 +2,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import Icon from '../../../components/Icon.jsx';
+import { useNow, useTimerControls } from '../../../components/Timer.jsx';
 import { useToast } from '../../../components/Toaster.jsx';
 import { Avatar, ConfirmDialog, Dropdown } from '../../../components/ui.jsx';
 import { api, MAX_UPLOAD_BYTES } from '../../../lib/api.js';
-import { dueInfo, formatSize, timeAgo } from '../../../lib/format.js';
+import { dueInfo, formatDate, formatElapsed, formatMinutes, formatSize, localToday, parseDuration, REPEATS, timeAgo } from '../../../lib/format.js';
 import { keys, useMe, useTask } from '../../../lib/queries.js';
 import { ActivityList } from './Activity.jsx';
 import { AssigneePicker, LabelPicker, PriorityPicker } from './Pickers.jsx';
@@ -45,6 +46,11 @@ export default function TaskPanel({ taskId, board, columns, labels, members, onC
   const update = (changes) => run(() => api.updateTask(taskId, changes));
   const canEdit = task?.role !== 'viewer' && board.role !== 'viewer';
 
+  // Completing a repeating task (by button or by moving it to a done column) makes the next one.
+  const announceNext = (result) =>
+    result?.nextOccurrence &&
+    toast(`Done. The next one is due ${formatDate(result.nextOccurrence.dueDate, { weekday: 'short', day: 'numeric', month: 'short' })}`, 'success');
+
   return (
     <>
       <div className="panel-scrim" onClick={onClose} />
@@ -69,7 +75,7 @@ export default function TaskPanel({ taskId, board, columns, labels, members, onC
                 className="status-select"
                 value={task.columnId}
                 disabled={!canEdit}
-                onChange={(e) => run(() => api.moveTask(taskId, Number(e.target.value), 0))}
+                onChange={async (e) => announceNext(await run(() => api.moveTask(taskId, Number(e.target.value), 0)))}
                 aria-label="Column"
               >
                 {columns.map((c) => (
@@ -80,7 +86,7 @@ export default function TaskPanel({ taskId, board, columns, labels, members, onC
               </select>
               <div className="panel-head-actions">
                 {canEdit && (
-                  <button className={`btn btn-sm ${task.done ? 'btn-secondary' : 'btn-primary'}`} onClick={() => update({ done: !task.done })}>
+                  <button className={`btn btn-sm ${task.done ? 'btn-secondary' : 'btn-primary'}`} onClick={async () => announceNext(await update({ done: !task.done }))}>
                     <Icon name="check" size={14} strokeWidth={2.4} /> {task.done ? 'Completed' : 'Mark complete'}
                   </button>
                 )}
@@ -125,6 +131,10 @@ export default function TaskPanel({ taskId, board, columns, labels, members, onC
                 <dd>
                   <PriorityPicker value={task.priority} disabled={!canEdit} onChange={(priority) => update({ priority })} />
                 </dd>
+                <dt>Repeat</dt>
+                <dd>
+                  <RepeatField task={task} disabled={!canEdit} onChange={(repeat) => update({ repeat })} />
+                </dd>
                 <dt>Labels</dt>
                 <dd>
                   <LabelPicker
@@ -144,6 +154,8 @@ export default function TaskPanel({ taskId, board, columns, labels, members, onC
               <Checklist task={task} canEdit={canEdit} run={run} />
 
               <Attachments task={task} canEdit={canEdit} run={run} toast={toast} />
+
+              <TimeTracking task={task} me={me} canEdit={canEdit} run={run} />
 
               <Comments task={task} me={me} members={members} run={run} />
 
@@ -228,6 +240,22 @@ function DueField({ task, disabled, onChange }) {
     <div className="due-field">
       <input type="date" className="input input-sm" value={task.dueDate ?? ''} disabled={disabled} onChange={(e) => onChange(e.target.value || null)} aria-label="Due date" />
       {due && <span className={`badge ${due.tone}`}>{due.overdue ? 'Overdue' : due.label}</span>}
+    </div>
+  );
+}
+
+function RepeatField({ task, disabled, onChange }) {
+  return (
+    <div className="repeat-field">
+      <select className="input input-sm" value={task.repeat ?? ''} disabled={disabled} onChange={(e) => onChange(e.target.value || null)} aria-label="Repeat">
+        <option value="">Doesn&apos;t repeat</option>
+        {REPEATS.map((r) => (
+          <option key={r.value} value={r.value}>
+            {r.label}
+          </option>
+        ))}
+      </select>
+      {task.repeat && <span className="faint small">{task.dueDate ? 'Next one is made when this is completed' : 'Counts from the day it’s completed'}</span>}
     </div>
   );
 }
@@ -366,6 +394,115 @@ function Attachments({ task, canEdit, run, toast }) {
         )}
       </div>
     </Section>
+  );
+}
+
+// ---------------------------------------------------------------- time
+
+function TimeTracking({ task, me, canEdit, run }) {
+  const { timer, startedAt, start, stop } = useTimerControls();
+  const running = timer?.taskId === task.id;
+  const now = useNow(running);
+  const [logging, setLogging] = useState(false);
+  const { totalMinutes, entries } = task.time;
+
+  if (!canEdit && entries.length === 0) return null;
+  return (
+    <Section title="Time" icon="timer" aside={totalMinutes ? `${formatMinutes(totalMinutes)} logged` : null}>
+      {canEdit && (
+        <div className="row-actions">
+          {running ? (
+            <button className="btn btn-sm btn-timer" onClick={stop}>
+              <Icon name="stop" size={13} strokeWidth={2.4} /> Stop <span className="timer-clock">{formatElapsed((now - startedAt) / 1000)}</span>
+            </button>
+          ) : (
+            <button className="btn btn-secondary btn-sm" onClick={() => start(task)} title={timer ? `Stops the timer on “${timer.title}”` : undefined}>
+              <Icon name="play" size={13} strokeWidth={2.2} /> Start timer
+            </button>
+          )}
+          <button className={`btn btn-ghost btn-sm ${logging ? 'is-active' : ''}`} onClick={() => setLogging(!logging)}>
+            <Icon name="plus" size={14} /> Log time
+          </button>
+        </div>
+      )}
+      {logging && (
+        <LogTimeForm
+          onCancel={() => setLogging(false)}
+          onSubmit={async (entry) => {
+            const saved = await run(() => api.addTime(task.id, entry));
+            if (saved) setLogging(false);
+          }}
+        />
+      )}
+      {entries.length > 0 && (
+        <ul className="time-entries">
+          {entries.map((e) => (
+            <li key={e.id}>
+              <Avatar name={e.user.name} seed={e.user.email} url={e.user.avatarUrl} size="sm" />
+              <span className="time-entry-main">
+                <b>{e.user.name}</b>
+                <span className="faint small">
+                  {formatDate(e.day, { weekday: 'short', day: 'numeric', month: 'short' })}
+                  {e.startedAt && e.minutes !== null && ' · timer'}
+                  {e.note && ` · ${e.note}`}
+                </span>
+              </span>
+              {e.minutes === null ? <span className="badge badge-accent">Running</span> : <span className="time-entry-minutes">{formatMinutes(e.minutes)}</span>}
+              {e.minutes !== null && (e.user.id === me?.id || task.role === 'owner') && (
+                <button className="icon-btn danger" onClick={() => run(() => api.deleteTime(e.id))} aria-label={`Remove ${formatMinutes(e.minutes)} logged by ${e.user.name}`}>
+                  <Icon name="x" size={14} />
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </Section>
+  );
+}
+
+function LogTimeForm({ onSubmit, onCancel }) {
+  const [duration, setDuration] = useState('');
+  const [day, setDay] = useState(localToday);
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const minutes = parseDuration(duration);
+  const valid = minutes !== null && minutes >= 1 && minutes <= 1440;
+
+  async function submit(event) {
+    event.preventDefault();
+    if (!valid) return;
+    setBusy(true);
+    await onSubmit({ day, minutes, note: note.trim() });
+    setBusy(false);
+  }
+
+  return (
+    <form className="log-time" onSubmit={submit}>
+      <label className="log-time-field">
+        <span className="field-label">Time spent</span>
+        <input className="input input-sm" value={duration} onChange={(e) => setDuration(e.target.value)} placeholder="1h 30m" autoFocus aria-describedby="duration-hint" />
+      </label>
+      <label className="log-time-field">
+        <span className="field-label">Day</span>
+        <input type="date" className="input input-sm" value={day} max={localToday()} onChange={(e) => setDay(e.target.value)} required />
+      </label>
+      <label className="log-time-field log-time-note">
+        <span className="field-label">Note</span>
+        <input className="input input-sm" value={note} maxLength={200} onChange={(e) => setNote(e.target.value)} placeholder="Optional" />
+      </label>
+      <p id="duration-hint" className={`small log-time-hint ${duration && !valid ? 'text-danger' : 'faint'}`}>
+        {!duration ? 'Like 45m, 1h 30m or 1:15' : valid ? `= ${formatMinutes(minutes)}` : 'Enter between 1 minute and 24 hours, like 1h 30m'}
+      </p>
+      <div className="row-actions">
+        <button type="submit" className="btn btn-primary btn-sm" disabled={busy || !valid}>
+          Add time
+        </button>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </form>
   );
 }
 

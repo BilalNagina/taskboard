@@ -29,9 +29,9 @@ export function workspaceRoutes({ repo, access, session }) {
 
   router.post('/:id/boards', async (req, res) => {
     const id = parseId(req.params.id, 'workspace');
-    const { name } = validate(schemas.board, req.body);
+    const body = validate(schemas.newBoard, req.body);
     await access.workspace(req, id, 'member');
-    res.status(201).json(await repo.createBoard(id, req.user.id, name));
+    res.status(201).json(await repo.createBoard(id, req.user.id, body));
   });
 
   return router;

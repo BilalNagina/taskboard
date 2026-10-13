@@ -12,6 +12,7 @@ import './styles/auth.css';
 import './styles/app.css';
 import './styles/board.css';
 import './styles/insights.css';
+import './styles/planning.css';
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

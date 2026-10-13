@@ -50,8 +50,8 @@ export function taskRoutes({ repo, access, session, removeFiles, log }) {
   router.get('/tasks/:id', async (req, res) => {
     const id = parseId(req.params.id, 'task');
     const { role } = await access.task(req, id);
-    const [task, activity] = await Promise.all([repo.getTaskDetail(id), repo.taskActivity(id)]);
-    res.json({ ...task, role, activity });
+    const [task, activity, time] = await Promise.all([repo.getTaskDetail(id), repo.taskActivity(id), repo.taskTime(id)]);
+    res.json({ ...task, role, activity, time });
   });
 
   router.patch('/tasks/:id', async (req, res) => {
@@ -59,7 +59,7 @@ export function taskRoutes({ repo, access, session, removeFiles, log }) {
     const changes = validate(schemas.updateTask, req.body);
     const a = await access.task(req, id, 'member');
     await checkRefs(a, changes);
-    const { task, before } = await repo.updateTask(id, changes);
+    const { task, before, next } = await repo.updateTask(id, changes);
 
     // One activity entry per meaningful change.
     if (changes.done !== undefined && changes.done !== before.done) {
@@ -77,6 +77,9 @@ export function taskRoutes({ repo, access, session, removeFiles, log }) {
     if (changes.description !== undefined && changes.description !== before.description) {
       await log(req, a, 'task.description_changed', {}, id);
     }
+    if (changes.repeat !== undefined && changes.repeat !== before.repeat) {
+      await log(req, a, 'task.repeat_changed', { repeat: changes.repeat }, id);
+    }
     if (changes.assigneeIds !== undefined) {
       const added = task.assigneeIds.filter((uid) => !before.assigneeIds.includes(uid));
       if (added.length) {
@@ -84,7 +87,8 @@ export function taskRoutes({ repo, access, session, removeFiles, log }) {
         await notify(req, a, 'assigned', added, id);
       }
     }
-    res.json(task);
+    if (next) await log(req, a, 'task.recurred', { title: task.title, dueDate: next.dueDate }, next.id);
+    res.json({ ...task, nextOccurrence: next });
   });
 
   router.post('/tasks/:id/move', async (req, res) => {
@@ -98,7 +102,8 @@ export function taskRoutes({ repo, access, session, removeFiles, log }) {
       await log(req, a, 'task.moved', { from: from?.name, to: to.name }, id);
       if (move.done !== move.wasDone) await log(req, a, move.done ? 'task.completed' : 'task.reopened', { title: a.title }, id);
     }
-    res.json(await repo.getCard(id));
+    if (move.next) await log(req, a, 'task.recurred', { title: a.title, dueDate: move.next.dueDate }, move.next.id);
+    res.json({ ...(await repo.getCard(id)), nextOccurrence: move.next });
   });
 
   router.delete('/tasks/:id', async (req, res) => {

@@ -92,7 +92,7 @@ export function Dropdown({ trigger, children, align = 'left', className = '' }) 
   );
 }
 
-export function Dialog({ title, description, onClose, children }) {
+export function Dialog({ title, description, onClose, wide = false, children }) {
   const ref = useRef(null);
   useEffect(() => {
     const onKey = (event) => event.key === 'Escape' && onClose();
@@ -103,7 +103,7 @@ export function Dialog({ title, description, onClose, children }) {
 
   return (
     <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="dialog" role="dialog" aria-modal="true" aria-label={title} ref={ref}>
+      <div className={`dialog ${wide ? 'dialog-wide' : ''}`} role="dialog" aria-modal="true" aria-label={title} ref={ref}>
         <h2>{title}</h2>
         {description && <p className="muted small">{description}</p>}
         {children}

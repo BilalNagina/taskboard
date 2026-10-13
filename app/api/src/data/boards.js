@@ -1,5 +1,6 @@
 // Boards, their columns and labels. Callers check access first; these queries work on
 // ids they've already been allowed to touch.
+import { TEMPLATES } from '../templates.js';
 
 const BOARD = `b.id, b.workspace_id AS "workspaceId", b.name, b.created_at AS "createdAt",
   (SELECT count(*)::int FROM tasks t WHERE t.board_id = b.id) AS "taskCount",
@@ -10,18 +11,64 @@ const LABEL = 'id, board_id AS "boardId", name, color';
 
 export const LABEL_COLORS = ['gray', 'red', 'amber', 'green', 'teal', 'blue', 'violet', 'pink'];
 
-// Every new board starts with three columns and a few labels.
-export async function seedBoard(q, boardId) {
-  await q.query(
-    `INSERT INTO board_columns (board_id, name, position, is_done)
-     VALUES ($1, 'To do', 0, false), ($1, 'In progress', 1, false), ($1, 'Done', 2, true)`,
-    [boardId],
-  );
-  await q.query(
-    `INSERT INTO labels (board_id, name, color)
-     VALUES ($1, 'Bug', 'red'), ($1, 'Feature', 'blue'), ($1, 'Design', 'teal'), ($1, 'Research', 'violet')`,
-    [boardId],
-  );
+// Fills a new board with a template's columns, labels and example cards. `userId` is
+// who the template's "assign" cards go to (and who created the cards, if `createdBy`).
+// `today` anchors the cards' due dates; the database's date when it isn't given.
+export async function applyTemplate(q, boardId, templateKey, { userId, createdBy = userId, today = null }) {
+  const template = TEMPLATES[templateKey];
+  const columns = (
+    await q.query(
+      `INSERT INTO board_columns (board_id, name, is_done, position)
+       SELECT $1, c.name, c.done, c.pos - 1 FROM unnest($2::text[], $3::boolean[]) WITH ORDINALITY AS c (name, done, pos)
+       RETURNING id, position, is_done`,
+      [boardId, template.columns.map((c) => c.name), template.columns.map((c) => Boolean(c.done))],
+    )
+  ).rows.sort((a, b) => a.position - b.position);
+  const labels = (
+    await q.query(
+      `INSERT INTO labels (board_id, name, color) SELECT $1, l.name, l.color FROM unnest($2::text[], $3::text[]) AS l (name, color)
+       RETURNING id, name`,
+      [boardId, template.labels.map(([name]) => name), template.labels.map(([, color]) => color)],
+    )
+  ).rows;
+  const labelId = new Map(labels.map((l) => [l.name, l.id]));
+  const nextPosition = columns.map(() => 0);
+
+  for (const task of template.tasks) {
+    const column = columns[task.column];
+    const { rows } = await q.query(
+      `INSERT INTO tasks (board_id, column_id, created_by, title, description, priority, repeat, position, done, completed_at, due_date)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CASE WHEN $9 THEN now() END,
+               CASE WHEN $10::int IS NOT NULL THEN COALESCE($11::date, current_date) + $10::int END)
+       RETURNING id`,
+      [
+        boardId,
+        column.id,
+        createdBy,
+        task.title,
+        task.description ?? '',
+        task.priority ?? 'none',
+        task.repeat ?? null,
+        nextPosition[task.column]++,
+        column.is_done,
+        task.due ?? null,
+        today,
+      ],
+    );
+    const taskId = rows[0].id;
+    if (task.labels?.length) {
+      await q.query('INSERT INTO task_labels (task_id, label_id) SELECT $1, unnest($2::int[])', [taskId, task.labels.map((name) => labelId.get(name))]);
+    }
+    if (task.assign && userId) await q.query('INSERT INTO task_assignees (task_id, user_id) VALUES ($1, $2)', [taskId, userId]);
+    if (task.checklist?.length) {
+      const items = task.checklist.map((item) => (Array.isArray(item) ? item : [item, false]));
+      await q.query(
+        `INSERT INTO checklist_items (task_id, text, done, position)
+         SELECT $1, i.text, i.done, i.pos - 1 FROM unnest($2::text[], $3::boolean[]) WITH ORDINALITY AS i (text, done, pos)`,
+        [taskId, items.map(([text]) => text), items.map(([, done]) => done)],
+      );
+    }
+  }
 }
 
 // Rewrites positions 0..n-1 in the given order.
@@ -47,13 +94,13 @@ export function boardsRepo(db) {
 
     getBoard: (boardId) => one(`SELECT ${BOARD} FROM boards b WHERE b.id = $1`, [boardId]),
 
-    createBoard: (workspaceId, userId, name) =>
+    createBoard: (workspaceId, userId, { name, template = 'blank', today = null }) =>
       db.tx(async (q) => {
         const { rows } = await q.query(
           'INSERT INTO boards (workspace_id, created_by, name) VALUES ($1, $2, $3) RETURNING id',
           [workspaceId, userId, name],
         );
-        await seedBoard(q, rows[0].id);
+        await applyTemplate(q, rows[0].id, template, { userId, today });
         return (await q.query(`SELECT ${BOARD} FROM boards b WHERE b.id = $1`, [rows[0].id])).rows[0];
       }),
 

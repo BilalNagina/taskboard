@@ -29,6 +29,9 @@ export const keys = {
   search: (workspaceId, params) => ['search', workspaceId, params],
   notifications: ['notifications'],
   unread: ['unread'],
+  templates: ['templates'],
+  timer: ['timer'],
+  timesheet: (workspaceId, params) => ['timesheet', workspaceId, params],
 };
 
 // null when signed out (401), the user otherwise.
@@ -105,3 +108,17 @@ export const useSearch = (workspaceId, params, enabled) =>
 // The unread count is polled; the list loads when the bell opens.
 export const useUnreadCount = () => useQuery({ queryKey: keys.unread, queryFn: api.unreadCount, refetchInterval: 30_000 });
 export const useNotifications = (enabled) => useQuery({ queryKey: keys.notifications, queryFn: api.notifications, enabled });
+
+export const useTemplates = () => useQuery({ queryKey: keys.templates, queryFn: api.templates, staleTime: Infinity });
+
+// The running timer (or null). Checked now and then, since it can be started in another tab.
+export const useTimer = () =>
+  useQuery({ queryKey: keys.timer, queryFn: () => api.timer().then((r) => r.timer), refetchInterval: 60_000 });
+
+export const useTimesheet = (workspaceId, params) =>
+  useQuery({
+    queryKey: keys.timesheet(workspaceId, params),
+    queryFn: () => api.timesheet(workspaceId, params),
+    enabled: Boolean(workspaceId),
+    placeholderData: (previous) => previous,
+  });

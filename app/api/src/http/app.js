@@ -9,6 +9,7 @@ import { boardRoutes } from './routes/boards.js';
 import { insightRoutes, notificationRoutes } from './routes/insights.js';
 import { memberRoutes } from './routes/members.js';
 import { taskRoutes } from './routes/tasks.js';
+import { timeRoutes } from './routes/time.js';
 import { workspaceRoutes } from './routes/workspaces.js';
 import { createSessionHelpers } from './session.js';
 
@@ -96,6 +97,7 @@ export function createApp({ repo, sessions, limiter, storage, jobs, ping, logger
   app.use('/api', memberRoutes(deps));
   app.use('/api', insightRoutes(deps));
   app.use('/api', notificationRoutes(deps));
+  app.use('/api', timeRoutes(deps));
   app.use('/api/workspaces', workspaceRoutes(deps));
   app.use('/api', boardRoutes(deps));
   app.use('/api', taskRoutes(deps));

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import request from 'supertest';
 import { roleAtLeast, toPrefixQuery } from '../src/data/index.js';
-import { boardCsv, csvCell, pdfSafe } from '../src/exporters.js';
+import { boardCsv, csvCell, pdfSafe, timesheetCsv } from '../src/exporters.js';
 import { imageType } from '../src/http/routes/attachments.js';
 import { buildInviteEmail, buildPasswordResetEmail, buildReminderEmail } from '../src/emails.js';
 import { createApp } from '../src/http/app.js';
@@ -10,7 +10,10 @@ import { HttpError } from '../src/http/errors.js';
 import { parseContentType, parseFilename, parseId, schemas, validate } from '../src/http/validation.js';
 import { inviteLink, resetLink, sendInvite, sendPasswordReset } from '../src/jobs.js';
 import { hashPassword, verifyPassword } from '../src/passwords.js';
+import { nextDueDate } from '../src/recurrence.js';
 import { describeDue, reminderJobId, scanDueTasks, sendReminder } from '../src/reminders.js';
+import { LABEL_COLORS } from '../src/data/boards.js';
+import { TEMPLATE_KEYS, TEMPLATES, templateSummaries } from '../src/templates.js';
 
 const rejects = (schema, value) => assert.throws(() => validate(schema, value), HttpError);
 
@@ -242,4 +245,73 @@ test('exposes Prometheus metrics labelled by route', async () => {
   await request(app).get('/readyz');
   const res = await request(app).get('/metrics');
   assert.match(res.text, /http_requests_total\{method="GET",route="\/readyz",status="200"\} 1/);
+});
+
+// ---------------------------------------------------------------- recurring tasks
+
+test('repeating tasks get their next due date after today', () => {
+  const today = '2026-10-14'; // a Wednesday
+  assert.equal(nextDueDate('daily', '2026-10-14', today), '2026-10-15');
+  assert.equal(nextDueDate('weekly', '2026-10-16', today), '2026-10-23', 'finished early: the following week');
+  assert.equal(nextDueDate('weekly', '2026-09-30', today), '2026-10-21', 'overdue: skips to the first date after today');
+  assert.equal(nextDueDate('daily', '2026-10-01', today), '2026-10-15');
+  assert.equal(nextDueDate('weekly', null, today), '2026-10-21', 'no due date: counts from today');
+  assert.equal(nextDueDate('weekdays', '2026-10-16', '2026-10-16'), '2026-10-19', 'Friday to Monday');
+  assert.equal(nextDueDate('weekdays', '2026-10-17', '2026-10-16'), '2026-10-19', 'Saturday to Monday');
+  assert.equal(nextDueDate('monthly', '2026-01-31', '2026-01-31'), '2026-02-28', 'the 31st becomes the end of February');
+  assert.equal(nextDueDate('monthly', '2028-01-31', '2028-01-31'), '2028-02-29', 'leap years too');
+  assert.equal(nextDueDate('monthly', '2026-12-15', '2026-12-15'), '2027-01-15', 'across the year end');
+  assert.equal(nextDueDate('daily', '2026-03-28', '2026-03-28'), '2026-03-29', 'daylight saving changes do not shift days');
+  assert.throws(() => nextDueDate('hourly', null, today));
+});
+
+test('task input accepts a repeat setting', () => {
+  assert.equal(validate(schemas.newTask, { title: 'Rent', repeat: 'monthly' }).repeat, 'monthly');
+  assert.deepEqual(validate(schemas.updateTask, { repeat: null }), { repeat: null });
+  rejects(schemas.updateTask, { repeat: 'hourly' });
+});
+
+// ---------------------------------------------------------------- templates
+
+test('every template is internally consistent', () => {
+  assert.deepEqual(TEMPLATE_KEYS, ['blank', 'sprint', 'content', 'hiring'], 'the sample board is not offered as a template');
+  for (const [key, t] of Object.entries(TEMPLATES)) {
+    assert.ok(t.columns.length >= 1 && t.columns.length <= 8, key);
+    assert.ok(t.columns.some((c) => c.done), `${key} has a done column`);
+    assert.ok(t.columns.every((c) => c.name.length <= 40), `${key} column names fit`);
+    const labels = new Set(t.labels.map(([name]) => name));
+    assert.equal(labels.size, t.labels.length, `${key} label names are unique`);
+    for (const [, color] of t.labels) assert.ok(LABEL_COLORS.includes(color), `${key} uses known colours`);
+    for (const task of t.tasks) {
+      assert.ok(task.title.length <= 200 && task.column >= 0 && task.column < t.columns.length, `${key}: ${task.title}`);
+      for (const name of task.labels ?? []) assert.ok(labels.has(name), `${key}: ${task.title} uses label ${name}`);
+      assert.ok(!task.repeat || ['daily', 'weekdays', 'weekly', 'monthly'].includes(task.repeat));
+      assert.ok((task.description ?? '').length <= 5000);
+      // Reminders go out for tasks due today or tomorrow; example cards shouldn't trigger them on day one.
+      assert.ok(task.due === undefined || task.due >= 2, `${key}: ${task.title} is not due straight away`);
+    }
+  }
+  const summary = templateSummaries().find((t) => t.key === 'sprint');
+  assert.deepEqual(summary.columns, ['Backlog', 'Ready', 'In progress', 'In review', 'Done']);
+  assert.equal(summary.taskCount, TEMPLATES.sprint.tasks.length);
+});
+
+test('board, timer and time entry input', () => {
+  assert.deepEqual(validate(schemas.newBoard, { name: ' Sprint 14 ', template: 'sprint' }), { name: 'Sprint 14', template: 'sprint' });
+  rejects(schemas.newBoard, { name: 'Sample', template: 'starter' });
+  rejects(schemas.startTimer, {});
+  assert.deepEqual(validate(schemas.timeEntry, { day: '2026-10-14', minutes: 90, note: ' Planning ' }), { day: '2026-10-14', minutes: 90, note: 'Planning' });
+  for (const minutes of [0, 1441, 1.5, '30']) rejects(schemas.timeEntry, { day: '2026-10-14', minutes });
+  assert.deepEqual(validate(schemas.timesheet, { from: '2026-10-12', to: '2026-10-18', userId: '7' }), { from: '2026-10-12', to: '2026-10-18', userId: 7 });
+  assert.throws(() => validate(schemas.timesheet, { from: '2026-01-01', to: '2026-12-31' }), { message: 'the range can be at most 62 days' });
+  assert.deepEqual(validate(schemas.profile, { onboarded: true }), { onboarded: true });
+  rejects(schemas.profile, { onboarded: false });
+});
+
+test('timesheet CSV has hours and is safe for spreadsheets', () => {
+  const csv = timesheetCsv([{ day: '2026-10-14', person: 'Ada', board: 'Launch', task: '=SUM(A1)', minutes: 90, note: 'Call, then notes' }]);
+  assert.equal(csv.charCodeAt(0), 0xfeff);
+  const lines = csv.slice(1).split(String.fromCharCode(13, 10));
+  assert.equal(lines[0], 'Date,Person,Board,Task,Minutes,Hours,Note');
+  assert.equal(lines[1], `2026-10-14,Ada,Launch,'=SUM(A1),90,1.50,"Call, then notes"`);
 });

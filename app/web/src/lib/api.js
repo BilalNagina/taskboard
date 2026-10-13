@@ -45,7 +45,8 @@ export const api = {
   createWorkspace: (name) => request('/workspaces', { method: 'POST', json: { name } }),
   renameWorkspace: (id, name) => request(`/workspaces/${id}`, { method: 'PATCH', json: { name } }),
   boards: (workspaceId) => request(`/workspaces/${workspaceId}/boards`),
-  createBoard: (workspaceId, name) => request(`/workspaces/${workspaceId}/boards`, { method: 'POST', json: { name } }),
+  createBoard: (workspaceId, board) => request(`/workspaces/${workspaceId}/boards`, { method: 'POST', json: board }),
+  templates: () => request('/templates'),
   board: (id) => request(`/boards/${id}`),
   renameBoard: (id, name) => request(`/boards/${id}`, { method: 'PATCH', json: { name } }),
   deleteBoard: (id) => request(`/boards/${id}`, { method: 'DELETE' }),
@@ -104,6 +105,15 @@ export const api = {
   removeAvatar: () => request('/me/avatar', { method: 'DELETE' }),
 
   exportUrl: (boardId, format) => `/api/boards/${boardId}/export.${format}`,
+
+  // time tracking
+  timer: () => request('/me/timer'),
+  startTimer: (taskId, today) => request(`/tasks/${taskId}/timer`, { method: 'POST', json: { today } }),
+  stopTimer: () => request('/me/timer/stop', { method: 'POST' }),
+  addTime: (taskId, entry) => request(`/tasks/${taskId}/time`, { method: 'POST', json: entry }),
+  deleteTime: (id) => request(`/time/${id}`, { method: 'DELETE' }),
+  timesheet: (workspaceId, params) => request(`/workspaces/${workspaceId}/timesheet?${new URLSearchParams(params)}`),
+  timesheetCsvUrl: (workspaceId, params) => `/api/workspaces/${workspaceId}/timesheet.csv?${new URLSearchParams(params)}`,
 
   // files
   upload: (taskId, file) => request(`/tasks/${taskId}/attachments`, { method: 'POST', file }),

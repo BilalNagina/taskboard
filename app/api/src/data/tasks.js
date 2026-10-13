@@ -1,11 +1,12 @@
 // Tasks and everything on them: moves between columns, labels, assignees, checklist
 // items, comments and attachments. Callers check access first.
+import { nextDueDate } from '../recurrence.js';
 import { setPositions } from './boards.js';
 import { avatarUrl } from './users.js';
 
 // What a card on the board needs.
 const CARD = `t.id, t.board_id AS "boardId", t.column_id AS "columnId", t.position, t.title, t.done,
-  t.priority, t.due_date AS "dueDate", t.created_at AS "createdAt", t.updated_at AS "updatedAt",
+  t.priority, t.due_date AS "dueDate", t.repeat, t.created_at AS "createdAt", t.updated_at AS "updatedAt",
   COALESCE((SELECT array_agg(label_id ORDER BY label_id) FROM task_labels WHERE task_id = t.id), '{}') AS "labelIds",
   COALESCE((SELECT array_agg(user_id ORDER BY user_id) FROM task_assignees WHERE task_id = t.id), '{}') AS "assigneeIds",
   (SELECT count(*)::int FROM checklist_items WHERE task_id = t.id) AS "checklistTotal",
@@ -19,8 +20,41 @@ const CHECKLIST = 'id, task_id AS "taskId", text, done, position';
 
 const clamp = (value, max) => Math.max(0, Math.min(value, max));
 
+// Makes the next occurrence of a repeating task that was just completed: same details,
+// assignees and labels, a fresh checklist and the next due date, at the end of the
+// board's first open column. The repeat setting moves to the new task. Returns
+// { id, dueDate } of the new task, or null if the task doesn't repeat.
+async function createNextOccurrence(q, taskId) {
+  const task = (
+    await q.query('SELECT board_id, repeat, due_date, title, description, priority, created_by FROM tasks WHERE id = $1', [taskId])
+  ).rows[0];
+  if (!task?.repeat) return null;
+  const column = (
+    await q.query('SELECT id FROM board_columns WHERE board_id = $1 AND NOT is_done ORDER BY position, id LIMIT 1', [task.board_id])
+  ).rows[0];
+  if (!column) return null;
+  const { today } = (await q.query('SELECT current_date AS today')).rows[0];
+  const dueDate = nextDueDate(task.repeat, task.due_date, today);
+  const { rows } = await q.query(
+    `INSERT INTO tasks (board_id, column_id, created_by, title, description, priority, repeat, due_date, position)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, (SELECT COALESCE(max(position) + 1, 0) FROM tasks WHERE column_id = $2))
+     RETURNING id`,
+    [task.board_id, column.id, task.created_by, task.title, task.description, task.priority, task.repeat, dueDate],
+  );
+  const nextId = rows[0].id;
+  await q.query('INSERT INTO task_labels (task_id, label_id) SELECT $1, label_id FROM task_labels WHERE task_id = $2', [nextId, taskId]);
+  await q.query('INSERT INTO task_assignees (task_id, user_id) SELECT $1, user_id FROM task_assignees WHERE task_id = $2', [nextId, taskId]);
+  await q.query('INSERT INTO checklist_items (task_id, text, position) SELECT $1, text, position FROM checklist_items WHERE task_id = $2', [
+    nextId,
+    taskId,
+  ]);
+  await q.query('UPDATE tasks SET repeat = NULL WHERE id = $1', [taskId]);
+  return { id: nextId, dueDate };
+}
+
 // Puts a task at `index` in `columnId` (same board) and keeps `done` in step with the
-// column. Returns { fromColumnId, toColumnId, wasDone, done }, or null for a bad column.
+// column. Returns { fromColumnId, toColumnId, wasDone, done, next } (next: the new
+// occurrence when this completed a repeating task), or null for a bad column.
 async function moveWithin(q, taskId, columnId, index) {
   const task = (await q.query('SELECT board_id, column_id, done FROM tasks WHERE id = $1 FOR UPDATE', [taskId])).rows[0];
   const column = (
@@ -45,7 +79,8 @@ async function moveWithin(q, taskId, columnId, index) {
     const left = (await q.query('SELECT id FROM tasks WHERE column_id = $1 ORDER BY position, id', [task.column_id])).rows;
     await setPositions(q, 'tasks', left.map((r) => r.id));
   }
-  return { fromColumnId: task.column_id, toColumnId: columnId, wasDone: task.done, done: column.is_done };
+  const next = !task.done && column.is_done ? await createNextOccurrence(q, taskId) : null;
+  return { fromColumnId: task.column_id, toColumnId: columnId, wasDone: task.done, done: column.is_done, next };
 }
 
 async function replaceSet(q, table, column, taskId, ids) {
@@ -87,7 +122,7 @@ export function tasksRepo(db) {
     },
 
     // New cards go to the end of the column (the board's first column by default).
-    createTask: (boardId, userId, { title, columnId, dueDate = null, priority = 'none', description = '', assigneeIds = [], labelIds = [] }) =>
+    createTask: (boardId, userId, { title, columnId, dueDate = null, priority = 'none', description = '', repeat = null, assigneeIds = [], labelIds = [] }) =>
       db.tx(async (q) => {
         const column = (
           await q.query(
@@ -98,11 +133,11 @@ export function tasksRepo(db) {
         ).rows[0];
         if (!column) return null;
         const { rows } = await q.query(
-          `INSERT INTO tasks (board_id, column_id, created_by, title, due_date, priority, description, done, completed_at, position)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CASE WHEN $8 THEN now() END,
+          `INSERT INTO tasks (board_id, column_id, created_by, title, due_date, priority, description, repeat, done, completed_at, position)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CASE WHEN $9 THEN now() END,
                    (SELECT COALESCE(max(position) + 1, 0) FROM tasks WHERE column_id = $2))
            RETURNING id`,
-          [boardId, column.id, userId, title, dueDate, priority, description, column.is_done],
+          [boardId, column.id, userId, title, dueDate, priority, description, repeat, column.is_done],
         );
         const taskId = rows[0].id;
         await replaceSet(q, 'task_assignees', 'user_id', taskId, assigneeIds);
@@ -110,7 +145,8 @@ export function tasksRepo(db) {
         return getCard(taskId, q);
       }),
 
-    // Returns { task, before, move } so the caller can log what changed.
+    // Returns { task, before, next } so the caller can log what changed (next: the new
+    // occurrence when this completed a repeating task).
     updateTask: (taskId, changes) =>
       db.tx(async (q) => {
         const before = (await q.query(`SELECT ${CARD}, t.description FROM tasks t WHERE t.id = $1 FOR UPDATE`, [taskId])).rows[0];
@@ -120,6 +156,7 @@ export function tasksRepo(db) {
         if (changes.title !== undefined) sets.push(`title = ${param(changes.title)}`);
         if (changes.description !== undefined) sets.push(`description = ${param(changes.description)}`);
         if (changes.priority !== undefined) sets.push(`priority = ${param(changes.priority)}`);
+        if (changes.repeat !== undefined) sets.push(`repeat = ${param(changes.repeat)}`);
         if (changes.dueDate !== undefined) {
           const p = param(changes.dueDate);
           // A new due date earns a new reminder.
@@ -130,7 +167,7 @@ export function tasksRepo(db) {
         if (changes.labelIds !== undefined) await replaceSet(q, 'task_labels', 'label_id', taskId, changes.labelIds);
 
         // Ticking a card done moves it to the board's done column (and back), if there is one.
-        let move = null;
+        let next = null;
         if (changes.done !== undefined && changes.done !== before.done) {
           const target = (
             await q.query(
@@ -139,15 +176,16 @@ export function tasksRepo(db) {
             )
           ).rows[0];
           if (target) {
-            move = await moveWithin(q, taskId, target.id, changes.done ? 0 : undefined);
+            next = (await moveWithin(q, taskId, target.id, changes.done ? 0 : undefined)).next;
           } else {
             await q.query(
               `UPDATE tasks SET done = $2, completed_at = CASE WHEN $2 THEN now() ELSE NULL END WHERE id = $1`,
               [taskId, changes.done],
             );
+            if (changes.done) next = await createNextOccurrence(q, taskId);
           }
         }
-        return { task: await getCard(taskId, q), before, move };
+        return { task: await getCard(taskId, q), before, next };
       }),
 
     moveTask: (taskId, columnId, index) => db.tx((q) => moveWithin(q, taskId, columnId, index)),

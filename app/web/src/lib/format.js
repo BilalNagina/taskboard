@@ -61,3 +61,38 @@ export function dueInfo(dueDate, done) {
   if (days === 1) return { label: 'Tomorrow', tone: 'badge-warning' };
   return { label: formatDate(dueDate), tone: '' };
 }
+
+export const REPEATS = [
+  { value: 'daily', label: 'Every day' },
+  { value: 'weekdays', label: 'Every weekday' },
+  { value: 'weekly', label: 'Every week' },
+  { value: 'monthly', label: 'Every month' },
+];
+export const repeatLabel = (value) => REPEATS.find((r) => r.value === value)?.label ?? "Doesn't repeat";
+
+// 45 -> "45m", 90 -> "1h 30m", 120 -> "2h".
+export function formatMinutes(minutes) {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (!h) return `${m}m`;
+  return m ? `${h}h ${m}m` : `${h}h`;
+}
+
+// A running timer's elapsed time: "4:05" or "1:04:05".
+export function formatElapsed(seconds) {
+  const s = Math.max(0, Math.floor(seconds));
+  const pad = (n) => String(n).padStart(2, '0');
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return h ? `${h}:${pad(m)}:${pad(s % 60)}` : `${m}:${pad(s % 60)}`;
+}
+
+// Reads "1h 30m", "1.5h", "90m", "1:30" or "90" (minutes). Null if it can't.
+export function parseDuration(text) {
+  const s = text.trim().toLowerCase().replace(/\s+/g, '');
+  let m = s.match(/^(\d+):([0-5]\d)$/);
+  if (m) return Number(m[1]) * 60 + Number(m[2]);
+  m = s.match(/^(?:(\d+(?:[.,]\d+)?)h)?(?:(\d+)m(?:in)?)?$/);
+  if (m && (m[1] || m[2])) return Math.round(parseFloat((m[1] ?? '0').replace(',', '.')) * 60) + Number(m[2] ?? 0);
+  return /^\d+$/.test(s) ? Number(s) : null;
+}

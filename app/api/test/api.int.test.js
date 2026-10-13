@@ -27,7 +27,7 @@ describe('API against PostgreSQL and Redis', { skip: skipIntegration }, () => {
 
   // ------------------------------------------------------------ accounts
 
-  test('sign-up starts a secure session with a personal workspace and first board', async () => {
+  test('sign-up starts a secure session with a personal workspace and a sample board', async () => {
     const agent = request.agent(app);
     const email = `new-${randomUUID()}@example.com`;
     const res = await agent.post('/api/auth/register').send({ name: 'Grace Hopper', email: email.toUpperCase(), password: PASSWORD });
@@ -44,7 +44,7 @@ describe('API against PostgreSQL and Redis', { skip: skipIntegration }, () => {
     assert.equal(workspaces[0].name, "Grace's workspace");
     assert.equal(workspaces[0].role, 'owner');
     const boards = (await agent.get(`/api/workspaces/${workspaces[0].id}/boards`)).body;
-    assert.deepEqual(boards.map((b) => b.name), ['My tasks']);
+    assert.deepEqual(boards.map((b) => b.name), ['Getting started']);
 
     assert.equal((await request(app).post('/api/auth/register').send({ name: 'G', email, password: PASSWORD })).status, 409);
   });
@@ -324,6 +324,7 @@ describe('migrations', { skip: !DATABASE_URL && 'DATABASE_URL not set' }, () => 
         '003_workspaces_password_resets.sql',
         '004_columns_details_invites_activity.sql',
         '005_search_notifications_profile.sql',
+        '006_recurring_time_onboarding.sql',
       ]);
     } finally {
       await Promise.all(dbs.map((db) => db.close()));

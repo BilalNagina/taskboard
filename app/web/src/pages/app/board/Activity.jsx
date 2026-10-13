@@ -1,5 +1,5 @@
 import { Avatar } from '../../../components/ui.jsx';
-import { formatDate, priorityInfo, timeAgo } from '../../../lib/format.js';
+import { formatDate, priorityInfo, repeatLabel, timeAgo } from '../../../lib/format.js';
 
 // Turns an activity entry into a sentence. `inTask` drops the task name when the feed is
 // already inside that task's panel.
@@ -23,6 +23,10 @@ export function describe(entry, inTask = false) {
       return d.dueDate ? `set ${task} due ${formatDate(d.dueDate)}` : `removed the due date from ${task}`;
     case 'task.priority_changed':
       return `set the priority of ${task} to ${priorityInfo(d.priority).label.toLowerCase()}`;
+    case 'task.repeat_changed':
+      return d.repeat ? `set ${task} to repeat ${repeatLabel(d.repeat).toLowerCase()}` : `stopped ${task} repeating`;
+    case 'task.recurred':
+      return `${inTask ? 'created this task' : `created the next “${d.title}”`} as a repeat, due ${formatDate(d.dueDate)}`;
     case 'task.description_changed':
       return `updated the description of ${task}`;
     case 'task.deleted':

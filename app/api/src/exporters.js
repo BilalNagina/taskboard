@@ -31,6 +31,13 @@ export function boardCsv(rows) {
   return '﻿' + [header, ...lines].map((cells) => cells.map(csvCell).join(',')).join('\r\n') + '\r\n';
 }
 
+// One row per time entry, with hours alongside minutes for spreadsheet sums.
+export function timesheetCsv(rows) {
+  const header = ['Date', 'Person', 'Board', 'Task', 'Minutes', 'Hours', 'Note'];
+  const lines = rows.map((r) => [r.day, r.person, r.board, r.task, r.minutes, (r.minutes / 60).toFixed(2), r.note]);
+  return '\uFEFF' + [header, ...lines].map((cells) => cells.map(csvCell).join(',')).join('\r\n') + '\r\n';
+}
+
 // The built-in PDF fonts only cover Western European characters. Anything else becomes
 // "?" rather than garbled output; embedding a Unicode font would add several MB.
 const WIN_ANSI_EXTRAS = '€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ';
