@@ -50,7 +50,7 @@ export function ActivityList({ entries, inTask, onOpenTask }) {
     <ol className="activity">
       {entries.map((entry) => (
         <li key={entry.id}>
-          <Avatar name={entry.actor.name} seed={entry.actor.email} size="sm" />
+          <Avatar name={entry.actor.name} seed={entry.actor.email} url={entry.actor.avatarUrl} size="sm" />
           <div>
             <p>
               <b>{entry.actor.name}</b>{' '}

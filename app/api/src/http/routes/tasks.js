@@ -27,6 +27,9 @@ export function taskRoutes({ repo, access, session, removeFiles, log }) {
     return members.filter((m) => ids.includes(m.id)).map((m) => m.name);
   }
 
+  const notify = (req, a, type, userIds, taskId, data = {}) =>
+    repo.notify({ userIds, type, actorId: req.user.id, workspaceId: a.workspaceId, boardId: a.boardId, taskId, data });
+
   // ------------------------------------------------------------ tasks
 
   router.post('/boards/:id/tasks', async (req, res) => {
@@ -39,6 +42,7 @@ export function taskRoutes({ repo, access, session, removeFiles, log }) {
     await log(req, a, 'task.created', { title: task.title }, task.id);
     if (body.assigneeIds?.length) {
       await log(req, a, 'task.assigned', { userIds: body.assigneeIds, names: await memberNames(a.workspaceId, body.assigneeIds) }, task.id);
+      await notify(req, a, 'assigned', body.assigneeIds, task.id);
     }
     res.status(201).json(task);
   });
@@ -75,7 +79,10 @@ export function taskRoutes({ repo, access, session, removeFiles, log }) {
     }
     if (changes.assigneeIds !== undefined) {
       const added = task.assigneeIds.filter((uid) => !before.assigneeIds.includes(uid));
-      if (added.length) await log(req, a, 'task.assigned', { userIds: added, names: await memberNames(a.workspaceId, added) }, id);
+      if (added.length) {
+        await log(req, a, 'task.assigned', { userIds: added, names: await memberNames(a.workspaceId, added) }, id);
+        await notify(req, a, 'assigned', added, id);
+      }
     }
     res.json(task);
   });
@@ -136,6 +143,10 @@ export function taskRoutes({ repo, access, session, removeFiles, log }) {
     const valid = await repo.validMemberIds(a.workspaceId, [...new Set(mentions)]);
     const comment = await repo.addComment(id, req.user.id, body, valid);
     await log(req, a, 'comment.added', { excerpt: excerpt(body), mentions: valid }, id);
+    // Mentioned people hear about it as a mention; the task's other assignees as a comment.
+    await notify(req, a, 'mentioned', valid, id, { excerpt: excerpt(body) });
+    const { assigneeIds } = await repo.getCard(id);
+    await notify(req, a, 'comment', assigneeIds.filter((uid) => !valid.includes(uid)), id, { excerpt: excerpt(body) });
     res.status(201).json(comment);
   });
 

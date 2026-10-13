@@ -323,6 +323,7 @@ describe('migrations', { skip: !DATABASE_URL && 'DATABASE_URL not set' }, () => 
         '002_accounts_boards_attachments.sql',
         '003_workspaces_password_resets.sql',
         '004_columns_details_invites_activity.sql',
+        '005_search_notifications_profile.sql',
       ]);
     } finally {
       await Promise.all(dbs.map((db) => db.close()));

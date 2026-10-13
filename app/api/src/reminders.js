@@ -28,11 +28,22 @@ export async function sendReminder({ repo, mailer, appUrl }, { taskId, dueDate }
   if (!task) return { sent: false };
   const when = describeDue(task.dueDate, today);
   const link = `${appUrl}/app/boards/${task.boardId}?task=${task.id}`;
-  for (const person of task.recipients) {
+  // The bell notification goes to everyone (unless they turned "due" off); the email only
+  // to people who keep email reminders on.
+  await repo.notify({
+    userIds: task.recipients.map((p) => p.id),
+    type: 'due',
+    workspaceId: task.workspaceId,
+    boardId: task.boardId,
+    taskId: task.id,
+    data: { dueDate: task.dueDate, when },
+  });
+  const emailed = task.recipients.filter((p) => p.emailReminders);
+  for (const person of emailed) {
     await mailer.send(buildReminderEmail({ ...task, email: person.email, userName: person.name }, link, when));
   }
   await repo.markReminded(taskId, dueDate);
-  return { sent: task.recipients.length > 0 };
+  return { sent: emailed.length > 0 };
 }
 
 export function describeDue(dueDate, today) {

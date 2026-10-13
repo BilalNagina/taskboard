@@ -18,9 +18,15 @@ export function Logo({ to = '/', compact = false }) {
   );
 }
 
-export function Avatar({ name, seed, size }) {
+// A profile picture when there is one, otherwise initials on a colour picked from the email.
+export function Avatar({ name, seed, size, url }) {
+  const [broken, setBroken] = useState(false);
+  const className = `avatar ${size ? `avatar-${size}` : ''}`;
+  if (url && !broken) {
+    return <img className={`${className} avatar-img`} src={url} alt="" loading="lazy" onError={() => setBroken(true)} />;
+  }
   return (
-    <span className={`avatar ${size ? `avatar-${size}` : ''}`} style={{ background: colourFor(seed ?? name) }} aria-hidden="true">
+    <span className={className} style={{ background: colourFor(seed ?? name) }} aria-hidden="true">
       {initials(name)}
     </span>
   );

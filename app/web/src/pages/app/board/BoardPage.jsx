@@ -19,7 +19,8 @@ import Icon from '../../../components/Icon.jsx';
 import { useToast } from '../../../components/Toaster.jsx';
 import { Avatar, ConfirmDialog, Dialog, Dropdown, EmptyState, PromptDialog } from '../../../components/ui.jsx';
 import { api } from '../../../lib/api.js';
-import { keys, useBoardActivity, useBoardFull, useWorkspaces } from '../../../lib/queries.js';
+import { keys, useBoardActivity, useBoardFull, useMe, useWorkspaces } from '../../../lib/queries.js';
+import { daysUntil, PRIORITIES } from '../../../lib/format.js';
 import { useCurrentWorkspace } from '../AppLayout.jsx';
 import { ActivityList } from './Activity.jsx';
 import { CardView } from './Card.jsx';
@@ -30,6 +31,7 @@ const cardKey = (id) => `t:${id}`;
 const columnKey = (id) => `c:${id}`;
 const idOf = (key) => Number(String(key).slice(2));
 const isColumnKey = (key) => String(key).startsWith('c:');
+const NO_FILTERS = { q: '', assignee: '', label: '', priority: '', due: '' };
 
 // column id -> ordered card ids
 function groupCards(columns, cards) {
@@ -54,6 +56,8 @@ export default function BoardPage() {
   const [activeKey, setActiveKey] = useState(null);
   const [dialog, setDialog] = useState(null);
   const [showActivity, setShowActivity] = useState(false);
+  const [filters, setFilters] = useState(NO_FILTERS);
+  const { data: me } = useMe();
   const snapshot = useRef(null);
   const itemsRef = useRef(items);
   itemsRef.current = items;
@@ -114,6 +118,23 @@ export default function BoardPage() {
 
   const { board } = data;
   const canEdit = board.role !== 'viewer';
+  // Filters only hide cards on screen; dragging pauses so positions stay unambiguous.
+  const filtering = Object.values(filters).some(Boolean);
+  const matches = (card) => {
+    if (filters.q && !card.title.toLowerCase().includes(filters.q.toLowerCase())) return false;
+    if (filters.assignee === 'me' && !card.assigneeIds.includes(me?.id)) return false;
+    if (filters.assignee === 'none' && card.assigneeIds.length) return false;
+    if (/^[0-9]+$/.test(filters.assignee) && !card.assigneeIds.includes(Number(filters.assignee))) return false;
+    if (filters.label && !card.labelIds.includes(Number(filters.label))) return false;
+    if (filters.priority && card.priority !== filters.priority) return false;
+    if (filters.due) {
+      const days = card.dueDate ? daysUntil(card.dueDate) : null;
+      if (filters.due === 'overdue' && !(days !== null && days < 0 && !card.done)) return false;
+      if (filters.due === 'week' && !(days !== null && days >= 0 && days <= 6)) return false;
+      if (filters.due === 'none' && card.dueDate) return false;
+    }
+    return true;
+  };
   const workspace = workspaces.find((w) => w.id === board.workspaceId);
   const columns = columnOrder.map((id) => lookups.columns.get(id)).filter(Boolean);
   const openTask = (id) => setParams((p) => {
@@ -262,13 +283,28 @@ export default function BoardPage() {
           <div className="board-actions">
             <Link to={`/app/w/${board.workspaceId}/members`} className="avatar-stack avatar-stack-lg" title="Workspace members">
               {data.members.slice(0, 5).map((m) => (
-                <Avatar key={m.id} name={m.name} seed={m.email} size="sm" />
+                <Avatar key={m.id} name={m.name} seed={m.email} url={m.avatarUrl} size="sm" />
               ))}
               {data.members.length > 5 && <span className="avatar avatar-sm avatar-more">+{data.members.length - 5}</span>}
             </Link>
             <button className={`btn btn-secondary btn-sm ${showActivity ? 'is-active' : ''}`} onClick={() => setShowActivity(!showActivity)}>
               <Icon name="clock" size={15} /> Activity
             </button>
+            <Dropdown
+              align="right"
+              trigger={({ toggle }) => (
+                <button className="btn btn-secondary btn-sm" onClick={toggle} aria-label="Export board">
+                  Export <Icon name="chevronDown" size={14} />
+                </button>
+              )}
+            >
+              <a className="menu-item" href={api.exportUrl(boardId, 'csv')} download>
+                <Icon name="list" size={16} /> Spreadsheet (CSV)
+              </a>
+              <a className="menu-item" href={api.exportUrl(boardId, 'pdf')} download>
+                <Icon name="board" size={16} /> PDF document
+              </a>
+            </Dropdown>
             {canEdit && (
               <Dropdown
                 align="right"
@@ -290,6 +326,46 @@ export default function BoardPage() {
             )}
           </div>
         </header>
+        <div className="board-filters">
+          <div className="filter-search">
+            <Icon name="search" size={15} />
+            <input value={filters.q} onChange={(e) => setFilters({ ...filters, q: e.target.value })} placeholder="Filter cards" aria-label="Filter cards by title" />
+          </div>
+          <select className={`input input-sm filter ${filters.assignee ? 'is-set' : ''}`} value={filters.assignee} onChange={(e) => setFilters({ ...filters, assignee: e.target.value })} aria-label="Assignee">
+            <option value="">Anyone</option>
+            <option value="me">Assigned to me</option>
+            <option value="none">Unassigned</option>
+            {data.members.map((m) => (
+              <option key={m.id} value={m.id}>{m.name}</option>
+            ))}
+          </select>
+          <select className={`input input-sm filter ${filters.label ? 'is-set' : ''}`} value={filters.label} onChange={(e) => setFilters({ ...filters, label: e.target.value })} aria-label="Label">
+            <option value="">Any label</option>
+            {data.labels.map((l) => (
+              <option key={l.id} value={l.id}>{l.name}</option>
+            ))}
+          </select>
+          <select className={`input input-sm filter ${filters.priority ? 'is-set' : ''}`} value={filters.priority} onChange={(e) => setFilters({ ...filters, priority: e.target.value })} aria-label="Priority">
+            <option value="">Any priority</option>
+            {PRIORITIES.map((p) => (
+              <option key={p.value} value={p.value}>{p.label}</option>
+            ))}
+          </select>
+          <select className={`input input-sm filter ${filters.due ? 'is-set' : ''}`} value={filters.due} onChange={(e) => setFilters({ ...filters, due: e.target.value })} aria-label="Due date">
+            <option value="">Any due date</option>
+            <option value="overdue">Overdue</option>
+            <option value="week">Due this week</option>
+            <option value="none">No due date</option>
+          </select>
+          {filtering && (
+            <>
+              <button className="btn btn-ghost btn-sm" onClick={() => setFilters(NO_FILTERS)}>
+                Clear
+              </button>
+              {canEdit && <span className="faint small">Dragging is paused while filters are on.</span>}
+            </>
+          )}
+        </div>
       </div>
 
       <DndContext
@@ -306,8 +382,10 @@ export default function BoardPage() {
               <SortableColumn
                 key={column.id}
                 column={column}
-                cards={(items[column.id] ?? []).map((id) => lookups.cards.get(id)).filter(Boolean)}
+                cards={(items[column.id] ?? []).map((id) => lookups.cards.get(id)).filter((c) => c && (!filtering || matches(c)))}
+                total={filtering ? (items[column.id] ?? []).length : undefined}
                 canEdit={canEdit}
+                dragDisabled={filtering}
                 labels={lookups.labels}
                 members={lookups.members}
                 onOpen={openTask}

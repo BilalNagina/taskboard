@@ -1,6 +1,8 @@
 // Workspace members and invitations.
 
-const MEMBER = `u.id, u.name, u.email, m.role, m.joined_at AS "joinedAt"`;
+import { avatarUrl } from './users.js';
+
+const MEMBER = `u.id, u.name, u.email, m.role, m.joined_at AS "joinedAt", ${avatarUrl('u')} AS "avatarUrl"`;
 const INVITE = `i.id, i.workspace_id AS "workspaceId", i.email, i.role, i.created_at AS "createdAt",
   i.expires_at AS "expiresAt", i.expires_at < now() AS expired,
   json_build_object('id', inviter.id, 'name', inviter.name) AS "invitedBy"`;

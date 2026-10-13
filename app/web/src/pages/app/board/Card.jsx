@@ -90,7 +90,7 @@ export function CardView({ ref, card, labels, members, onOpen, className = '', o
           {assignees.length > 0 && (
             <span className="avatar-stack">
               {assignees.slice(0, 3).map((m) => (
-                <Avatar key={m.id} name={m.name} seed={m.email} size="sm" />
+                <Avatar key={m.id} name={m.name} seed={m.email} url={m.avatarUrl} size="sm" />
               ))}
               {assignees.length > 3 && <span className="avatar avatar-sm avatar-more">+{assignees.length - 3}</span>}
             </span>

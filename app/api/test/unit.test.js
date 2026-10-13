@@ -1,7 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import request from 'supertest';
-import { roleAtLeast } from '../src/data/index.js';
+import { roleAtLeast, toPrefixQuery } from '../src/data/index.js';
+import { boardCsv, csvCell, pdfSafe } from '../src/exporters.js';
+import { imageType } from '../src/http/routes/attachments.js';
 import { buildInviteEmail, buildPasswordResetEmail, buildReminderEmail } from '../src/emails.js';
 import { createApp } from '../src/http/app.js';
 import { HttpError } from '../src/http/errors.js';
@@ -58,6 +60,41 @@ test('roles rank viewer < member < owner', () => {
   assert.equal(roleAtLeast(undefined, 'viewer'), false);
 });
 
+test('search text becomes a safe prefix query', () => {
+  assert.equal(toPrefixQuery('Inv rep'), 'inv:* & rep:*');
+  assert.equal(toPrefixQuery('launch & (draft) | !x:*'), 'launch:* & draft:* & x:*', 'tsquery operators are stripped');
+  assert.equal(toPrefixQuery('Café ü'), 'café:* & ü:*');
+  assert.equal(toPrefixQuery('  !!  '), null);
+});
+
+test('CSV cells are quoted and protected against formula injection', () => {
+  assert.equal(csvCell('plain'), 'plain');
+  assert.equal(csvCell('a,b'), '"a,b"');
+  assert.equal(csvCell('say "hi"'), '"say ""hi"""');
+  assert.equal(csvCell('line\nbreak'), '"line\nbreak"');
+  assert.equal(csvCell('=HYPERLINK("x")'), `"'=HYPERLINK(""x"")"`);
+  assert.equal(csvCell('+1'), "'+1");
+  assert.equal(csvCell(null), '');
+  const csv = boardCsv([
+    { title: 'Ship', column: 'Done', done: true, priority: 'high', dueDate: '2026-10-14', assignees: 'Ada', labels: 'Bug', checklistDone: 1, checklistTotal: 2, description: '', createdAt: '2026-10-01T10:00:00Z', completedAt: null },
+  ]);
+  assert.ok(csv.startsWith('﻿Title,Column,Status'));
+  assert.match(csv, /\r\nShip,Done,Done,High,2026-10-14,Ada,Bug,1\/2,,2026-10-01,\r\n$/);
+});
+
+test('PDF text keeps Western characters and replaces the rest', () => {
+  assert.equal(pdfSafe('Café – “ok” …'), 'Café – “ok” …');
+  assert.equal(pdfSafe('مرحبا 你好'), '????? ??');
+});
+
+test('avatars must really be images', () => {
+  const pad = (bytes) => Buffer.concat([Buffer.from(bytes), Buffer.alloc(16)]);
+  assert.equal(imageType(pad([0xff, 0xd8, 0xff, 0xe0])), 'image/jpeg');
+  assert.equal(imageType(pad([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])), 'image/png');
+  assert.equal(imageType(Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WEBPVP8 ')])), 'image/webp');
+  assert.equal(imageType(pad([0x3c, 0x73, 0x76, 0x67])), null, 'SVG (and anything else) is refused');
+});
+
 // ---------------------------------------------------------------- passwords
 
 test('hashes and verifies passwords', async () => {
@@ -77,9 +114,11 @@ const dueTask = {
   title: 'Renew <TLS> cert',
   dueDate: '2026-10-14',
   boardName: 'Ops',
+  workspaceId: 1,
   recipients: [
-    { email: 'ada@example.com', name: 'Ada' },
-    { email: 'grace@example.com', name: 'Grace' },
+    { id: 1, email: 'ada@example.com', name: 'Ada', emailReminders: true },
+    { id: 2, email: 'grace@example.com', name: 'Grace', emailReminders: true },
+    { id: 3, email: 'quiet@example.com', name: 'Quiet', emailReminders: false },
   ],
 };
 
@@ -122,14 +161,18 @@ test('scan queues one email job per due task, keyed by task and due date', async
 test('sends a reminder to every recipient, only if the task still needs one', async () => {
   const sent = [];
   const marked = [];
+  const notified = [];
   const repo = {
     reminderDetails: async (id) => (id === 4 ? dueTask : null),
     markReminded: async (id, due) => marked.push([id, due]),
+    notify: async (n) => notified.push(n),
   };
   const deps = { repo, mailer: { send: async (msg) => sent.push(msg) }, appUrl: 'https://app.example.com' };
   assert.deepEqual(await sendReminder(deps, { taskId: 4, dueDate: '2026-10-14' }, '2026-10-13'), { sent: true });
   assert.deepEqual(await sendReminder(deps, { taskId: 5, dueDate: '2026-10-14' }, '2026-10-13'), { sent: false });
-  assert.deepEqual(sent.map((m) => m.to), ['ada@example.com', 'grace@example.com']);
+  assert.deepEqual(sent.map((m) => m.to), ['ada@example.com', 'grace@example.com'], 'no email for people who turned reminders off');
+  assert.deepEqual(notified[0].userIds, [1, 2, 3], 'but everyone gets the in-app notification');
+  assert.equal(notified[0].type, 'due');
   assert.match(sent[0].text, /app\/boards\/2\?task=4/);
   assert.deepEqual(marked, [[4, '2026-10-14']]);
 });

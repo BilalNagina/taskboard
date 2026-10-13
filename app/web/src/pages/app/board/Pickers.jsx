@@ -34,7 +34,7 @@ export function AssigneePicker({ members, value, onChange, disabled }) {
           ) : (
             selected.map((m) => (
               <span key={m.id} className="chip">
-                <Avatar name={m.name} seed={m.email} size="sm" /> {m.name.split(' ')[0]}
+                <Avatar name={m.name} seed={m.email} url={m.avatarUrl} size="sm" /> {m.name.split(' ')[0]}
               </span>
             ))
           )}
@@ -44,7 +44,7 @@ export function AssigneePicker({ members, value, onChange, disabled }) {
       <div className="menu-label">Assign to</div>
       {members.map((m) => (
         <Option key={m.id} selected={value.includes(m.id)} onClick={() => toggle(m.id)}>
-          <Avatar name={m.name} seed={m.email} size="sm" /> {m.name}
+          <Avatar name={m.name} seed={m.email} url={m.avatarUrl} size="sm" /> {m.name}
         </Option>
       ))}
     </Dropdown>

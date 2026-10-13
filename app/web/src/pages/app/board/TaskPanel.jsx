@@ -390,7 +390,7 @@ function Comment({ comment, me, members, run, canDelete }) {
   const edited = comment.updatedAt && new Date(comment.updatedAt) - new Date(comment.createdAt) > 1000;
   return (
     <li className="comment">
-      <Avatar name={comment.author.name} seed={comment.author.email} size="sm" />
+      <Avatar name={comment.author.name} seed={comment.author.email} url={comment.author.avatarUrl} size="sm" />
       <div className="comment-main">
         <p className="comment-head">
           <b>{comment.author.name}</b>
@@ -528,7 +528,7 @@ function CommentComposer({ members, initial = '', submitLabel = 'Comment', onSub
                     choose(m);
                   }}
                 >
-                  <Avatar name={m.name} seed={m.email} size="sm" /> {m.name}
+                  <Avatar name={m.name} seed={m.email} url={m.avatarUrl} size="sm" /> {m.name}
                 </button>
               </li>
             ))}

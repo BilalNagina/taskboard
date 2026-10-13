@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router';
 import Icon from '../../components/Icon.jsx';
@@ -11,6 +11,7 @@ import { PasswordStrength } from '../auth/AuthPages.jsx';
 
 const TABS = [
   ['profile', 'user', 'Profile'],
+  ['notifications', 'bell', 'Notifications'],
   ['security', 'lock', 'Password'],
   ['appearance', 'sun', 'Appearance'],
 ];
@@ -39,6 +40,7 @@ export default function Settings() {
         </nav>
         <div className="settings-panel card" key={tab}>
           {tab === 'profile' && <ProfileForm user={user} />}
+          {tab === 'notifications' && <NotificationsForm user={user} />}
           {tab === 'security' && <PasswordForm />}
           {tab === 'appearance' && <AppearanceForm user={user} />}
         </div>
@@ -70,13 +72,7 @@ function ProfileForm({ user }) {
   return (
     <form onSubmit={save} className="settings-form">
       <h2>Profile</h2>
-      <div className="profile-row">
-        <Avatar name={name || user.name} seed={user.email} size="lg" />
-        <div>
-          <b>{name || user.name}</b>
-          <p className="muted small">Member since {new Date(user.createdAt).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</p>
-        </div>
-      </div>
+      <AvatarPicker user={user} name={name} />
       <Field label="Full name">
         {(props) => <input {...props} className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={80} required />}
       </Field>
@@ -184,5 +180,139 @@ function AppearanceForm({ user }) {
         ))}
       </div>
     </div>
+  );
+}
+
+// Crops the picked image to a centred square and scales it to 256px in the browser, so
+// uploads are small and every avatar has the same shape.
+function resizeToSquare(file, size = 256) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const side = Math.min(img.width, img.height);
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      canvas.getContext('2d').drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, size, size);
+      URL.revokeObjectURL(url);
+      canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Could not read that image'))), 'image/jpeg', 0.88);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('That file is not an image this browser can read'));
+    };
+    img.src = url;
+  });
+}
+
+function AvatarPicker({ user, name }) {
+  const input = useRef(null);
+  const [busy, setBusy] = useState(false);
+  const client = useQueryClient();
+  const toast = useToast();
+
+  async function run(action, message) {
+    setBusy(true);
+    try {
+      const { user: updated } = await action();
+      client.setQueryData(keys.me, updated);
+      client.invalidateQueries({ queryKey: ['members'] });
+      toast(message, 'success');
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function pick(event) {
+    const file = event.target.files[0];
+    event.target.value = '';
+    if (!file) return;
+    await run(async () => api.uploadAvatar(await resizeToSquare(file)), 'Profile photo updated');
+  }
+
+  return (
+    <div className="profile-row">
+      <Avatar name={name || user.name} seed={user.email} url={user.avatarUrl} size="lg" />
+      <div className="profile-row-text">
+        <b>{name || user.name}</b>
+        <p className="muted small">Member since {new Date(user.createdAt).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</p>
+        <div className="row-actions">
+          <input ref={input} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={pick} />
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => input.current.click()} disabled={busy}>
+            {busy ? 'Saving…' : user.avatarUrl ? 'Change photo' : 'Upload photo'}
+          </button>
+          {user.avatarUrl && (
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => run(api.removeAvatar, 'Profile photo removed')} disabled={busy}>
+              Remove
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const NOTIFICATION_OPTIONS = [
+  ['assigned', 'Assigned to me', 'Someone adds you to a task'],
+  ['mentioned', 'Mentions', 'Someone @mentions you in a comment'],
+  ['comment', 'Comments on my tasks', 'New comments on tasks you are assigned to'],
+  ['due', 'Due dates', 'Your tasks are due today or tomorrow'],
+];
+
+function NotificationsForm({ user }) {
+  const client = useQueryClient();
+  const toast = useToast();
+  const prefs = user.notificationPrefs ?? {};
+  const isOn = (key) => prefs[key] !== false;
+
+  async function toggle(key) {
+    const notificationPrefs = { [key]: !isOn(key) };
+    client.setQueryData(keys.me, { ...user, notificationPrefs: { ...prefs, ...notificationPrefs } });
+    try {
+      const { user: updated } = await api.updateProfile({ notificationPrefs });
+      client.setQueryData(keys.me, updated);
+    } catch (err) {
+      client.setQueryData(keys.me, user);
+      toast(err.message, 'error');
+    }
+  }
+
+  return (
+    <div className="settings-form">
+      <h2>Notifications</h2>
+      <p className="muted small">Choose what appears under the bell. Changes save straight away.</p>
+      <ul className="switch-list">
+        {NOTIFICATION_OPTIONS.map(([key, label, hint]) => (
+          <li key={key}>
+            <div>
+              <b>{label}</b>
+              <span className="faint small">{hint}</span>
+            </div>
+            <Switch checked={isOn(key)} onChange={() => toggle(key)} label={label} />
+          </li>
+        ))}
+      </ul>
+      <h2 style={{ marginTop: 8 }}>Email</h2>
+      <ul className="switch-list">
+        <li>
+          <div>
+            <b>Reminder emails</b>
+            <span className="faint small">An email the day before a task assigned to you is due</span>
+          </div>
+          <Switch checked={isOn('emailReminders')} onChange={() => toggle('emailReminders')} label="Reminder emails" />
+        </li>
+      </ul>
+    </div>
+  );
+}
+
+function Switch({ checked, onChange, label }) {
+  return (
+    <button type="button" role="switch" aria-checked={checked} aria-label={label} className={`switch ${checked ? 'on' : ''}`} onClick={onChange}>
+      <span />
+    </button>
   );
 }

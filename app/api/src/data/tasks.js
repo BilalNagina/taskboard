@@ -1,6 +1,7 @@
 // Tasks and everything on them: moves between columns, labels, assignees, checklist
 // items, comments and attachments. Callers check access first.
 import { setPositions } from './boards.js';
+import { avatarUrl } from './users.js';
 
 // What a card on the board needs.
 const CARD = `t.id, t.board_id AS "boardId", t.column_id AS "columnId", t.position, t.title, t.done,
@@ -76,7 +77,7 @@ export function tasksRepo(db) {
         all(`SELECT ${ATTACHMENT} FROM attachments WHERE task_id = $1 ORDER BY id`, [taskId]),
         all(
           `SELECT c.id, c.body, c.mentions, c.created_at AS "createdAt", c.updated_at AS "updatedAt",
-                  json_build_object('id', u.id, 'name', COALESCE(u.name, 'Deleted user'), 'email', u.email) AS author
+                  json_build_object('id', u.id, 'name', COALESCE(u.name, 'Deleted user'), 'email', u.email, 'avatarUrl', ${avatarUrl('u')}) AS author
              FROM comments c LEFT JOIN users u ON u.id = c.user_id
             WHERE c.task_id = $1 ORDER BY c.id`,
           [taskId],
@@ -192,7 +193,7 @@ export function tasksRepo(db) {
       ]);
       return one(
         `SELECT c.id, c.body, c.mentions, c.created_at AS "createdAt", c.updated_at AS "updatedAt",
-                json_build_object('id', u.id, 'name', u.name, 'email', u.email) AS author
+                json_build_object('id', u.id, 'name', u.name, 'email', u.email, 'avatarUrl', ${avatarUrl('u')}) AS author
            FROM comments c JOIN users u ON u.id = c.user_id WHERE c.id = $1`,
         [id],
       );

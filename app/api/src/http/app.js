@@ -6,6 +6,7 @@ import { HttpError } from './errors.js';
 import { attachmentRoutes } from './routes/attachments.js';
 import { accountRoutes, authRoutes } from './routes/auth.js';
 import { boardRoutes } from './routes/boards.js';
+import { insightRoutes, notificationRoutes } from './routes/insights.js';
 import { memberRoutes } from './routes/members.js';
 import { taskRoutes } from './routes/tasks.js';
 import { workspaceRoutes } from './routes/workspaces.js';
@@ -93,6 +94,8 @@ export function createApp({ repo, sessions, limiter, storage, jobs, ping, logger
   // Before the routers below, which require sign-in for everything under /api: the
   // invite lookup is public.
   app.use('/api', memberRoutes(deps));
+  app.use('/api', insightRoutes(deps));
+  app.use('/api', notificationRoutes(deps));
   app.use('/api/workspaces', workspaceRoutes(deps));
   app.use('/api', boardRoutes(deps));
   app.use('/api', taskRoutes(deps));

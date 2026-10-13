@@ -42,7 +42,20 @@ export const schemas = {
     password: newPassword,
   }),
   profile: z
-    .object({ name: text('name', 80).optional(), theme: z.enum(['system', 'light', 'dark']).optional() })
+    .object({
+      name: text('name', 80).optional(),
+      theme: z.enum(['system', 'light', 'dark']).optional(),
+      notificationPrefs: z
+        .object({
+          assigned: z.boolean().optional(),
+          mentioned: z.boolean().optional(),
+          comment: z.boolean().optional(),
+          due: z.boolean().optional(),
+          emailReminders: z.boolean().optional(),
+        }, 'notificationPrefs must be an object of true/false switches')
+        .strict('unknown notification preference')
+        .optional(),
+    })
     .refine(atLeastOne, 'nothing to update'),
   changePassword: z.object({
     currentPassword: z.string('current password is required').min(1, 'current password is required').max(128),
@@ -85,6 +98,26 @@ export const schemas = {
   comment: z.object({ body: text('comment', 5000), mentions: ids('mention').optional() }),
   invite: z.object({ email, role }),
   memberRole: z.object({ role }),
+  // Query strings arrive as text, so numbers and dates are parsed from strings here.
+  today: z.object({ today: z.iso.date('today must be a date (YYYY-MM-DD)').optional() }),
+  calendar: z
+    .object({
+      from: z.iso.date('from must be a date (YYYY-MM-DD)'),
+      to: z.iso.date('to must be a date (YYYY-MM-DD)'),
+      boardId: z.coerce.number().int().positive('boardId must be an id').optional(),
+    })
+    .refine((v) => v.from <= v.to, 'from must be on or before to')
+    .refine((v) => (Date.parse(v.to) - Date.parse(v.from)) / 86_400_000 <= 62, 'the range can be at most 62 days'),
+  search: z.object({
+    q: z.string().max(200, 'search text must be at most 200 characters').optional(),
+    assignee: z.union([z.literal('me'), z.literal('none'), z.coerce.number().int().positive()], 'assignee must be me, none or an id').optional(),
+    priority: priority.optional(),
+    due: z.enum(['overdue', 'today', 'week', 'none'], 'due must be overdue, today, week or none').optional(),
+    status: z.enum(['open', 'done', 'all'], 'status must be open, done or all').optional(),
+    boardId: z.coerce.number().int().positive('boardId must be an id').optional(),
+    today: z.iso.date('today must be a date (YYYY-MM-DD)').optional(),
+  }),
+  markRead: z.object({ ids: z.array(z.number().int().positive(), 'ids must be a list of ids').max(200).optional() }),
   inviteToken: z.object({ token: z.string('token is required').min(20, 'this invite link is invalid').max(200, 'this invite link is invalid') }),
 };
 

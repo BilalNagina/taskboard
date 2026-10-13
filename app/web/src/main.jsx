@@ -11,6 +11,7 @@ import './styles/landing.css';
 import './styles/auth.css';
 import './styles/app.css';
 import './styles/board.css';
+import './styles/insights.css';
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

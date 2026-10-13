@@ -3,6 +3,9 @@ import pg from 'pg';
 // Return DATE columns as 'YYYY-MM-DD' strings. By default pg turns them into JavaScript
 // Dates at local midnight, which shifts the day in any timezone other than UTC.
 pg.types.setTypeParser(pg.types.builtins.DATE, (value) => value);
+// bigint (bigserial ids for activity and notifications) arrives as a string by default.
+// These ids stay far below 2^53, so plain numbers are safe and keep ids one type.
+pg.types.setTypeParser(pg.types.builtins.INT8, (value) => Number(value));
 
 export function createDb(connectionString) {
   const pool = new pg.Pool({ connectionString, max: 10 });

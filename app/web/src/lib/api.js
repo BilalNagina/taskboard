@@ -88,6 +88,23 @@ export const api = {
   acceptMyInvite: (id) => request(`/me/invites/${id}/accept`, { method: 'POST' }),
   declineMyInvite: (id) => request(`/me/invites/${id}`, { method: 'DELETE' }),
 
+  // insights
+  dashboard: (workspaceId, today) => request(`/workspaces/${workspaceId}/dashboard?today=${today}`),
+  calendar: (workspaceId, from, to, boardId) =>
+    request(`/workspaces/${workspaceId}/calendar?from=${from}&to=${to}${boardId ? `&boardId=${boardId}` : ''}`),
+  search: (workspaceId, params) => request(`/workspaces/${workspaceId}/search?${new URLSearchParams(params)}`),
+
+  // notifications
+  notifications: () => request('/notifications'),
+  unreadCount: () => request('/notifications/unread-count'),
+  markRead: (ids) => request('/notifications/read', { method: 'POST', json: ids ? { ids } : {} }),
+
+  // profile picture
+  uploadAvatar: (blob) => request('/me/avatar', { method: 'POST', file: Object.assign(blob, { name: 'avatar' }) }),
+  removeAvatar: () => request('/me/avatar', { method: 'DELETE' }),
+
+  exportUrl: (boardId, format) => `/api/boards/${boardId}/export.${format}`,
+
   // files
   upload: (taskId, file) => request(`/tasks/${taskId}/attachments`, { method: 'POST', file }),
   deleteAttachment: (id) => request(`/attachments/${id}`, { method: 'DELETE' }),
