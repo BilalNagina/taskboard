@@ -2,8 +2,10 @@ import express from 'express';
 import { pinoHttp } from 'pino-http';
 import client from 'prom-client';
 import { createAccess } from './access.js';
+import { createLimits } from './limits.js';
 import { HttpError } from './errors.js';
 import { attachmentRoutes } from './routes/attachments.js';
+import { adminRoutes } from './routes/admin.js';
 import { accountRoutes, authRoutes } from './routes/auth.js';
 import { boardRoutes } from './routes/boards.js';
 import { insightRoutes, notificationRoutes } from './routes/insights.js';
@@ -85,7 +87,7 @@ export function createApp({ repo, sessions, limiter, storage, jobs, ping, logger
   }
 
   const session = createSessionHelpers({ sessions, repo, cookieSecure });
-  const deps = { repo, sessions, limiter, storage, jobs, session, removeFiles, log, appUrl, access: createAccess(repo) };
+  const deps = { repo, sessions, limiter, storage, jobs, session, removeFiles, log, appUrl, access: createAccess(repo), limits: createLimits(repo) };
 
   // Raw-body uploads first, before the JSON parser.
   app.use('/api', attachmentRoutes(deps));
@@ -98,6 +100,7 @@ export function createApp({ repo, sessions, limiter, storage, jobs, ping, logger
   app.use('/api', insightRoutes(deps));
   app.use('/api', notificationRoutes(deps));
   app.use('/api', timeRoutes(deps));
+  app.use('/api', adminRoutes(deps));
   app.use('/api/workspaces', workspaceRoutes(deps));
   app.use('/api', boardRoutes(deps));
   app.use('/api', taskRoutes(deps));

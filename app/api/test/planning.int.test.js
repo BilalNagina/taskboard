@@ -27,14 +27,14 @@ describe('templates, recurring tasks and time tracking', { skip: skipIntegration
     assert.equal(board.name, 'Getting started');
     const state = await full(agent, board.id);
     assert.deepEqual(state.columns.map((c) => [c.name, c.isDone]), [['To do', false], ['In progress', false], ['Done', true]]);
-    assert.equal(state.cards.length, 7);
+    assert.equal(state.cards.length, 8);
     const card = (title) => state.cards.find((c) => c.title.startsWith(title));
     assert.equal(card('Create your Tasklane account').done, true);
     assert.deepEqual(card('Open this card').assigneeIds, [user.id]);
     assert.equal(card('Open this card').checklistTotal, 3);
     assert.equal(card('Weekly review').repeat, 'weekly');
     assert.equal(card('Weekly review').dueDate, isoDate(6));
-    assert.deepEqual(state.cards.filter((c) => c.columnId === state.columns[0].id).map((c) => c.position).sort(), [0, 1, 2, 3, 4]);
+    assert.deepEqual(state.cards.filter((c) => c.columnId === state.columns[0].id).map((c) => c.position).sort(), [0, 1, 2, 3, 4, 5]);
 
     const done = (await agent.patch('/api/me').send({ onboarded: true })).body.user;
     assert.ok(done.onboardedAt);
@@ -45,6 +45,8 @@ describe('templates, recurring tasks and time tracking', { skip: skipIntegration
   test('boards can start from a template', async () => {
     const { agent, user, workspace } = await signUp();
     const templates = (await agent.get('/api/templates')).body;
+    // Four boards is more than the Free plan holds.
+    await agent.patch(`/api/workspaces/${workspace.id}/plan`).send({ plan: 'pro' });
     assert.deepEqual(templates.map((t) => t.key), ['blank', 'sprint', 'content', 'hiring']);
 
     const board = (await agent.post(`/api/workspaces/${workspace.id}/boards`).send({ name: 'Sprint 14', template: 'sprint', today: isoDate(0) })).body;

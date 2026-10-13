@@ -1,4 +1,5 @@
 import { activityRepo } from './activity.js';
+import { adminRepo } from './admin.js';
 import { boardsRepo } from './boards.js';
 import { insightsRepo } from './insights.js';
 import { membersRepo } from './members.js';
@@ -26,5 +27,6 @@ export function createRepo(db) {
     ...notificationsRepo(db),
     ...remindersRepo(db),
     ...timeRepo(db),
+    ...adminRepo(db),
   };
 }

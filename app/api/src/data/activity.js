@@ -27,6 +27,17 @@ export function activityRepo(db) {
         [boardId, before, limit],
       ),
 
+    // Everything in the workspace, with the board name, for the admin panel's audit log.
+    workspaceActivity: (workspaceId, { before = null, limit = 50 } = {}) =>
+      all(
+        `SELECT ${ENTRY}, b.name AS "boardName"
+           FROM activity a LEFT JOIN users u ON u.id = a.actor_id LEFT JOIN tasks t ON t.id = a.task_id
+           LEFT JOIN boards b ON b.id = a.board_id
+          WHERE a.workspace_id = $1 AND ($2::bigint IS NULL OR a.id < $2)
+          ORDER BY a.id DESC LIMIT $3`,
+        [workspaceId, before, limit],
+      ),
+
     taskActivity: (taskId, limit = 30) =>
       all(
         `SELECT ${ENTRY} FROM activity a LEFT JOIN users u ON u.id = a.actor_id LEFT JOIN tasks t ON t.id = a.task_id

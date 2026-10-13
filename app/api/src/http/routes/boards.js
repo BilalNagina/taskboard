@@ -47,8 +47,11 @@ export function boardRoutes({ repo, access, session, removeFiles, log }) {
 
   router.delete('/boards/:id', async (req, res) => {
     const id = parseId(req.params.id, 'board');
-    await access.board(req, id, 'owner');
+    const a = await access.board(req, id, 'owner');
+    const board = await repo.getBoard(id);
     await removeFiles(req, await repo.deleteBoard(id));
+    // Logged against the workspace only: the board's own history goes with it.
+    await log(req, { ...a, boardId: null }, 'board.deleted', { name: board.name });
     res.status(204).end();
   });
 

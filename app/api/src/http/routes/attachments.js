@@ -18,7 +18,7 @@ export function imageType(buffer) {
 
 // Mounted before the JSON parser: the upload body is the raw file, so a JSON file isn't
 // parsed (and rejected) as a JSON request.
-export function attachmentRoutes({ repo, access, session, storage, limiter, removeFiles, log }) {
+export function attachmentRoutes({ repo, access, limits, session, storage, limiter, removeFiles, log }) {
   const router = express.Router();
   // Auth is per route: this router sits on /api ahead of the others, so a router-wide
   // check would also run for sign-in requests.
@@ -37,6 +37,7 @@ export function attachmentRoutes({ repo, access, session, storage, limiter, remo
       if (!(await limiter.hit(`upload:${req.user.id}`, { limit: 30, windowSeconds: 3600 }))) {
         throw new HttpError(429, 'upload limit reached, try again later');
       }
+      await limits.storage(a.workspaceId, req.body.length);
 
       // Keys never contain the user's filename, so names can't collide or escape the prefix.
       const storageKey = `attachments/${req.user.id}/${randomUUID()}`;
