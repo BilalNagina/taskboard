@@ -1,5 +1,5 @@
 // Server data via TanStack Query: cached, shared between pages, refetched after changes.
-import { QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { QueryClient, useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from './api.js';
 
 export const queryClient = new QueryClient({
@@ -32,6 +32,8 @@ export const keys = {
   templates: ['templates'],
   timer: ['timer'],
   timesheet: (workspaceId, params) => ['timesheet', workspaceId, params],
+  admin: (workspaceId) => ['admin', workspaceId],
+  auditLog: (workspaceId) => ['auditLog', workspaceId],
 };
 
 // null when signed out (401), the user otherwise.
@@ -121,4 +123,17 @@ export const useTimesheet = (workspaceId, params) =>
     queryFn: () => api.timesheet(workspaceId, params),
     enabled: Boolean(workspaceId),
     placeholderData: (previous) => previous,
+  });
+
+export const useAdmin = (workspaceId, enabled = true) =>
+  useQuery({ queryKey: keys.admin(workspaceId), queryFn: () => api.admin(workspaceId), enabled: Boolean(workspaceId) && enabled });
+
+// The workspace audit log, 50 entries a page.
+export const useAuditLog = (workspaceId, enabled = true) =>
+  useInfiniteQuery({
+    queryKey: keys.auditLog(workspaceId),
+    queryFn: ({ pageParam }) => api.workspaceActivity(workspaceId, pageParam),
+    initialPageParam: null,
+    getNextPageParam: (last) => (last.length === 50 ? last.at(-1).id : undefined),
+    enabled: Boolean(workspaceId) && enabled,
   });

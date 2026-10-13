@@ -65,6 +65,14 @@ export default function Members() {
           <h1>Members</h1>
           <p className="muted page-sub">
             {members.length} {members.length === 1 ? 'person' : 'people'} in {workspace.name}
+            {isOwner && workspace.limits.members !== null && (
+              <>
+                {' · '}
+                <Link to={`/app/w/${workspaceId}/admin`}>
+                  {members.length + invites.filter((i) => !i.expired).length} of {workspace.limits.members} seats used on the {workspace.limits.name} plan
+                </Link>
+              </>
+            )}
           </p>
         </div>
       </header>

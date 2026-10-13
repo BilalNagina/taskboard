@@ -88,7 +88,7 @@ const PLANS = [
     monthly: 12,
     yearly: 10,
     blurb: 'For companies that need control and visibility.',
-    features: ['Unlimited members', 'Everything in Pro', 'Workspace admin panel', 'Viewer roles for clients', '50 GB of files'],
+    features: ['Unlimited members', 'Everything in Pro', 'Viewer roles for clients', '50 GB of files'],
     cta: 'Try Team',
   },
 ];
@@ -107,7 +107,7 @@ const FAQS = [
   ['Is there a mobile app?', 'Tasklane works in any modern browser and is fully responsive, so it works on phones and tablets without installing anything.'],
   [
     'Is this a real product?',
-    'Tasklane is a demonstration product. Accounts and data are real and work end to end, but payments are not enabled, so every plan is free while it runs.',
+    'Tasklane is a demonstration product. Accounts and data are real and work end to end, but payments are not enabled: plan limits apply, and workspace owners can switch plans for free in the admin panel.',
   ],
 ];
 
@@ -316,7 +316,7 @@ export default function Landing() {
               ))}
             </div>
             <p className="lp-note muted small" data-reveal>
-              Payments are not enabled in this demo: every account gets every feature for free.
+              Payments are not enabled in this demo: owners can switch any workspace to any plan for free.
             </p>
           </div>
         </section>

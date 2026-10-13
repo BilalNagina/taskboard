@@ -96,3 +96,7 @@ export function parseDuration(text) {
   if (m && (m[1] || m[2])) return Math.round(parseFloat((m[1] ?? '0').replace(',', '.')) * 60) + Number(m[2] ?? 0);
   return /^\d+$/.test(s) ? Number(s) : null;
 }
+
+export const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+// "Ctrl K" or "⌘ K"
+export const modKey = isMac ? '⌘' : 'Ctrl';
