@@ -63,6 +63,9 @@ export const schemas = {
           comment: z.boolean().optional(),
           due: z.boolean().optional(),
           emailReminders: z.boolean().optional(),
+          emailAssigned: z.boolean().optional(),
+          emailMentioned: z.boolean().optional(),
+          emailComment: z.boolean().optional(),
         }, 'notificationPrefs must be an object of true/false switches')
         .strict('unknown notification preference')
         .optional(),

@@ -1,6 +1,8 @@
 import express from 'express';
 import { pinoHttp } from 'pino-http';
 import client from 'prom-client';
+import { EMAIL_PREFS } from '../data/index.js';
+import { notificationEmailJob } from '../jobs.js';
 import { createAccess } from './access.js';
 import { createLimits } from './limits.js';
 import { HttpError } from './errors.js';
@@ -16,8 +18,10 @@ import { workspaceRoutes } from './routes/workspaces.js';
 import { createSessionHelpers } from './session.js';
 
 const QUIET_PATHS = new Set(['/healthz', '/readyz', '/metrics']);
+const CHANGES = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
+const noLive = { publish: async () => {} };
 
-export function createApp({ repo, sessions, limiter, storage, jobs, ping, logger, cookieSecure = false, appUrl = '' }) {
+export function createApp({ repo, sessions, limiter, storage, jobs, ping, logger, cookieSecure = false, appUrl = '', live = noLive }) {
   const app = express();
   app.disable('x-powered-by');
   // Requests arrive through the NGINX proxy on the private Docker network; trust its
@@ -70,6 +74,20 @@ export function createApp({ repo, sessions, limiter, storage, jobs, ping, logger
     res.type(registry.contentType).send(await registry.metrics());
   });
 
+  // After a successful change, tell everyone in the workspace (access checks noted which
+  // workspace, board and task it touched). X-Client-Id lets the tab that made the change
+  // skip refreshing for its own edit.
+  app.use((req, res, next) => {
+    if (CHANGES.has(req.method)) {
+      res.on('finish', () => {
+        if (res.statusCode >= 400 || !req.live?.workspaceId) return;
+        const clientId = req.get('x-client-id')?.slice(0, 64) ?? null;
+        live.publish({ kind: 'change', ...req.live, actorId: req.user?.id ?? null, clientId });
+      });
+    }
+    next();
+  });
+
   async function removeFiles(req, keys) {
     const existing = keys.filter(Boolean);
     if (existing.length === 0) return;
@@ -86,8 +104,22 @@ export function createApp({ repo, sessions, limiter, storage, jobs, ping, logger
     await repo.logActivity({ workspaceId: a.workspaceId, boardId: a.boardId ?? null, taskId, actorId: req.user.id, type, data });
   }
 
+  // Bell notifications: saved, pushed live, and (for the emailed types) queued for an email
+  // a couple of minutes later. `a` is an access row.
+  async function notify(req, a, type, userIds, taskId, data = {}) {
+    const notified = await repo.notify({ userIds, type, actorId: req.user.id, workspaceId: a.workspaceId, boardId: a.boardId ?? null, taskId, data });
+    if (!notified.length) return;
+    await live.publish({ kind: 'notification', userIds: notified });
+    if (EMAIL_PREFS[type]) {
+      for (const userId of notified) {
+        const job = notificationEmailJob(userId);
+        await jobs.add(job.name, job.data, job.opts);
+      }
+    }
+  }
+
   const session = createSessionHelpers({ sessions, repo, cookieSecure });
-  const deps = { repo, sessions, limiter, storage, jobs, session, removeFiles, log, appUrl, access: createAccess(repo), limits: createLimits(repo) };
+  const deps = { repo, sessions, limiter, storage, jobs, session, removeFiles, log, notify, appUrl, access: createAccess(repo), limits: createLimits(repo) };
 
   // Raw-body uploads first, before the JSON parser.
   app.use('/api', attachmentRoutes(deps));

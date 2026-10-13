@@ -124,3 +124,21 @@ kbd + kbd { margin-left: 3px; }
   .palette-foot { display: none; }
   .palette-hint { display: none; }
 }
+
+/* ---------------------------------------------------------------- live updates */
+
+.presence {
+  display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px 0 8px; margin-right: 2px;
+  border-radius: 999px; background: var(--success-soft); color: var(--success); font-size: 12px; font-weight: 600;
+  animation: fade var(--normal) var(--ease);
+}
+.presence .avatar { box-shadow: 0 0 0 2px var(--success-soft); }
+.presence-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); animation: breathe 2.4s ease-in-out infinite; }
+.live-status {
+  display: flex; align-items: center; gap: 8px; margin: 0 0 6px; padding: 8px 10px;
+  border-radius: var(--radius-sm); background: var(--warning-soft); color: var(--warning); font-size: 12px; line-height: 1.4;
+  animation: rise var(--normal) var(--ease);
+}
+.live-status .spinner { flex-shrink: 0; border-color: color-mix(in srgb, var(--warning) 35%, transparent); border-top-color: var(--warning); }
+@media (max-width: 720px) { .presence-text { display: none; } }
+@media (prefers-reduced-motion: reduce) { .presence-dot { animation: none; } }

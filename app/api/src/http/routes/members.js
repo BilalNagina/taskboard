@@ -127,6 +127,8 @@ export function memberRoutes({ repo, access, limits, session, limiter, jobs, app
     if (!(await repo.getMember(invite.workspaceId, req.user.id))) await limits.join(invite.workspaceId);
     const result = await repo.acceptInvite(invite.id, req.user.id);
     if (!result) throw new HttpError(410, 'this invite has expired; ask for a new one');
+    // Accepting doesn't go through an access check; tell the workspace someone joined.
+    req.live = { workspaceId: result.workspaceId, boardId: null, taskId: null };
     if (!result.alreadyMember) {
       await log(req, { workspaceId: result.workspaceId }, 'member.joined', { name: req.user.name, role: result.role });
     }

@@ -3,6 +3,7 @@ import { config } from './config.js';
 import { createRepo } from './data/index.js';
 import { createDb, waitForDb } from './db.js';
 import { createApp } from './http/app.js';
+import { attachLive, createLivePublisher } from './live.js';
 import { migrate } from './migrate.js';
 import { createQueue } from './queue.js';
 import { createRedis } from './redis.js';
@@ -17,9 +18,11 @@ const queue = createQueue(config.redisUrl);
 await waitForDb(db, logger);
 await migrate(db.pool, logger);
 
+const repo = createRepo(db);
+const sessions = createSessionStore(redis);
 const app = createApp({
-  repo: createRepo(db),
-  sessions: createSessionStore(redis),
+  repo,
+  sessions,
   limiter: createRateLimiter(redis),
   storage: createS3Storage(config.s3),
   jobs: { add: (name, data, opts) => queue.add(name, data, opts) },
@@ -27,12 +30,16 @@ const app = createApp({
   logger,
   cookieSecure: config.cookieSecure,
   appUrl: config.appUrl,
+  live: createLivePublisher(redis, logger),
 });
 const server = app.listen(config.port, () => logger.info({ port: config.port }, 'api listening'));
+// WebSockets share the HTTP port; a separate Redis connection listens for live events.
+const live = await attachLive(server, { subscriber: createRedis(config.redisUrl, logger), sessions, repo, appUrl: config.appUrl, logger });
 
 // Finish in-flight requests on SIGTERM so rolling deploys don't drop traffic.
 function shutdown(signal) {
   logger.info({ signal }, 'shutting down');
+  live.close();
   server.close(async () => {
     await Promise.allSettled([db.close(), redis.quit(), queue.close()]);
     process.exit(0);

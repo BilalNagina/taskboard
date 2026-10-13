@@ -5,7 +5,7 @@ import { parseId, schemas, validate } from '../validation.js';
 const excerpt = (text, max = 140) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 
 // Tasks, their checklist items and comments.
-export function taskRoutes({ repo, access, session, removeFiles, log }) {
+export function taskRoutes({ repo, access, session, removeFiles, log, notify }) {
   const router = express.Router();
   router.use(session.requireAuth);
 
@@ -26,9 +26,6 @@ export function taskRoutes({ repo, access, session, removeFiles, log }) {
     const members = await repo.listMembers(workspaceId);
     return members.filter((m) => ids.includes(m.id)).map((m) => m.name);
   }
-
-  const notify = (req, a, type, userIds, taskId, data = {}) =>
-    repo.notify({ userIds, type, actorId: req.user.id, workspaceId: a.workspaceId, boardId: a.boardId, taskId, data });
 
   // ------------------------------------------------------------ tasks
 

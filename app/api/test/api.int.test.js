@@ -326,6 +326,7 @@ describe('migrations', { skip: !DATABASE_URL && 'DATABASE_URL not set' }, () => 
         '005_search_notifications_profile.sql',
         '006_recurring_time_onboarding.sql',
         '007_keep_activity_of_deleted_boards.sql',
+        '008_notification_emails.sql',
       ]);
     } finally {
       await Promise.all(dbs.map((db) => db.close()));

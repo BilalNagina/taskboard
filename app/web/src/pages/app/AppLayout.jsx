@@ -12,6 +12,7 @@ import Tour from '../../components/Tour.jsx';
 import { Avatar, Dropdown, Logo, PromptDialog } from '../../components/ui.jsx';
 import { api } from '../../lib/api.js';
 import { modKey } from '../../lib/format.js';
+import { useLiveStatus, useLiveUpdates } from '../../lib/live.js';
 import { keys, useBoards, useMe, useMyInvites, useWorkspaces } from '../../lib/queries.js';
 import { applyTheme } from '../../lib/theme.js';
 import NewBoardDialog from './NewBoardDialog.jsx';
@@ -84,6 +85,7 @@ export default function AppLayout() {
   const signOut = useSignOut();
   const boardId = Number(location.pathname.match(/^\/app\/boards\/(\d+)/)?.[1]) || null;
   const taskId = Number(new URLSearchParams(location.search).get('task')) || null;
+  useLiveUpdates(boardId);
 
   // New accounts see the welcome tour once.
   useEffect(() => {
@@ -351,6 +353,7 @@ function Sidebar({ onClose }) {
         </div>
       </div>
 
+      <LiveStatus />
       <TimerPill />
       <UserMenu />
 
@@ -366,6 +369,26 @@ function Sidebar({ onClose }) {
       )}
       {dialog === 'board' && <NewBoardDialog workspace={workspace} onClose={() => setDialog(null)} />}
     </aside>
+  );
+}
+
+// Only says something when live updates have been down for a few seconds, so a quick
+// reconnect (a deploy, a network blip) goes unnoticed.
+function LiveStatus() {
+  // Keyed on connected-or-not: retries flip between "connecting" and "closed", which
+  // mustn't restart the wait.
+  const connected = useLiveStatus() === 'open';
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    if (connected) return setShow(false);
+    const timer = setTimeout(() => setShow(true), 4000);
+    return () => clearTimeout(timer);
+  }, [connected]);
+  if (!show) return null;
+  return (
+    <p className="live-status" role="status">
+      <span className="spinner" style={{ width: 12, height: 12 }} /> Reconnecting… others&apos; changes appear once it&apos;s back.
+    </p>
   );
 }
 

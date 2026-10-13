@@ -43,6 +43,9 @@ export function membersRepo(db) {
         await q.query('DELETE FROM workspace_members WHERE workspace_id = $1 AND user_id = $2', [workspaceId, userId]);
       }),
 
+    workspaceMemberIds: async (workspaceId) =>
+      (await all('SELECT user_id AS id FROM workspace_members WHERE workspace_id = $1', [workspaceId])).map((r) => r.id),
+
     // Ids from `ids` that are members of the workspace (any role).
     validMemberIds: async (workspaceId, ids) =>
       ids.length
