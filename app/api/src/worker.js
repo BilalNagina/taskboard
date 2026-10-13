@@ -1,14 +1,15 @@
-// Background worker: sends reminder emails for tasks that are due soon.
+// Background worker: reminder emails and password-reset emails, from a Redis job queue.
 // Runs from the same image as the API with a different command (node src/worker.js).
 import http from 'node:http';
-import { Queue, Worker } from 'bullmq';
+import { Worker } from 'bullmq';
 import pino from 'pino';
 import client from 'prom-client';
 import { config } from './config.js';
+import { createRepo } from './data/index.js';
 import { createDb, waitForDb } from './db.js';
+import { createJobHandlers, resetLink } from './jobs.js';
 import { createMailer } from './mailer.js';
-import { createRepo } from './repo.js';
-import { QUEUE_NAME, scanDueTasks, sendReminder } from './reminders.js';
+import { createQueue, QUEUE_NAME, queueConnection } from './queue.js';
 
 const logger = pino({ level: config.logLevel });
 const db = createDb(config.databaseUrl);
@@ -16,26 +17,17 @@ await waitForDb(db, logger);
 
 const repo = createRepo(db);
 const mailer = createMailer(config.mail, logger);
-// BullMQ needs maxRetriesPerRequest: null so its blocking commands wait out Redis restarts.
-const connection = { url: config.redisUrl, maxRetriesPerRequest: null };
-
-const queue = new Queue(QUEUE_NAME, {
-  connection,
-  defaultJobOptions: {
-    attempts: 5,
-    backoff: { type: 'exponential', delay: 30_000 },
-    removeOnComplete: { age: 24 * 3600 },
-    removeOnFail: { age: 7 * 24 * 3600 },
-  },
-});
+const queue = createQueue(config.redisUrl);
 // Idempotent: every worker replica upserts the same schedule, and only one scan runs.
 await queue.upsertJobScheduler('scan-due-tasks', { every: config.reminderScanMs }, { name: 'scan' });
+
+const handlers = createJobHandlers({ repo, mailer, queue, appUrl: config.appUrl });
 
 const registry = new client.Registry();
 client.collectDefaultMetrics({ register: registry });
 const jobsTotal = new client.Counter({
-  name: 'reminder_jobs_total',
-  help: 'Reminder queue jobs processed',
+  name: 'jobs_total',
+  help: 'Background jobs processed',
   labelNames: ['name', 'result'],
   registers: [registry],
 });
@@ -43,20 +35,28 @@ const jobsTotal = new client.Counter({
 const worker = new Worker(
   QUEUE_NAME,
   async (job) => {
-    if (job.name === 'scan') return scanDueTasks({ repo, queue });
-    if (job.name === 'email') return sendReminder({ repo, mailer, appUrl: config.appUrl }, job.data);
-    throw new Error(`unknown job ${job.name}`);
+    const handler = handlers[job.name];
+    if (!handler) throw new Error(`unknown job ${job.name}`);
+    return handler(job.data);
   },
-  { connection, concurrency: 5 },
+  { connection: queueConnection(config.redisUrl), concurrency: 5 },
 );
 
 worker.on('completed', (job, result) => {
   jobsTotal.inc({ name: job.name, result: 'completed' });
-  if (job.name === 'email' || result?.queued) logger.info({ job: job.name, id: job.id, result }, 'job completed');
+  if (job.name !== 'scan' || result?.queued) logger.info({ job: job.name, id: job.id, result }, 'job completed');
 });
 worker.on('failed', (job, err) => {
   jobsTotal.inc({ name: job?.name ?? 'unknown', result: 'failed' });
   logger.error({ job: job?.name, id: job?.id, attempt: job?.attemptsMade, err: err.message }, 'job failed');
+  // Fallback when a reset email can't be delivered (for example to an address SES won't
+  // send to yet): the link goes to the server log so an admin can pass it on.
+  if (job?.name === 'password-reset' && job.attemptsMade >= (job.opts.attempts ?? 1)) {
+    logger.warn(
+      { userId: job.data.userId, link: resetLink(config.appUrl, job.data.token) },
+      'password reset email could not be sent; share this link with the user (valid 30 minutes)',
+    );
+  }
 });
 worker.on('error', (err) => logger.error({ err: err.message }, 'worker error'));
 

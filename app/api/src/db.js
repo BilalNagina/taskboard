@@ -12,6 +12,21 @@ export function createDb(connectionString) {
     ping: async () => {
       await pool.query('SELECT 1');
     },
+    // Runs fn inside a transaction. fn gets an object with the same query() as db.
+    async tx(fn) {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const result = await fn({ query: (text, params) => client.query(text, params) });
+        await client.query('COMMIT');
+        return result;
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
+    },
     close: () => pool.end(),
   };
 }

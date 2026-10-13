@@ -27,3 +27,6 @@ export async function verifyPassword(password, stored) {
 // Compared against when the email doesn't exist, so a login takes the same time either
 // way and response timing doesn't reveal which emails have accounts.
 export const DUMMY_HASH = await hashPassword(randomBytes(16).toString('hex'));
+
+// How long a password-reset link stays valid.
+export const RESET_TTL_MINUTES = 30;

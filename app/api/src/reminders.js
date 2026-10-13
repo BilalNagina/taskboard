@@ -3,8 +3,7 @@
 //   2. Each "email" job re-checks the task, sends the email and records that it was sent.
 // The job id includes the due date, so a task already queued isn't queued twice, and
 // moving the due date queues a fresh reminder.
-
-export const QUEUE_NAME = 'reminders';
+import { buildReminderEmail } from './emails.js';
 
 export const reminderJobId = (task) => `reminder-${task.id}-${task.dueDate}`;
 
@@ -27,26 +26,9 @@ export async function scanDueTasks({ repo, queue }) {
 export async function sendReminder({ repo, mailer, appUrl }, { taskId, dueDate }, today = todayUtc()) {
   const task = await repo.reminderDetails(taskId, dueDate);
   if (!task) return { sent: false };
-  await mailer.send(buildReminderEmail(task, appUrl, today));
+  await mailer.send(buildReminderEmail(task, appUrl, describeDue(task.dueDate, today)));
   await repo.markReminded(taskId, dueDate);
   return { sent: true };
-}
-
-export function buildReminderEmail(task, appUrl, today = todayUtc()) {
-  const when = describeDue(task.dueDate, today);
-  const subject = `Reminder: "${task.title}" is ${when}`;
-  const text = [
-    `Hi ${task.userName},`,
-    '',
-    `"${task.title}" on your board "${task.boardName}" is ${when} (${task.dueDate}).`,
-    '',
-    `Open Taskboard: ${appUrl}`,
-  ].join('\n');
-  const html = `<p>Hi ${escapeHtml(task.userName)},</p>
-<p><strong>${escapeHtml(task.title)}</strong> on your board <em>${escapeHtml(task.boardName)}</em>
-is ${when} (${task.dueDate}).</p>
-<p><a href="${escapeHtml(appUrl)}">Open Taskboard</a></p>`;
-  return { to: task.email, subject, text, html };
 }
 
 export function describeDue(dueDate, today) {
@@ -59,11 +41,4 @@ export function describeDue(dueDate, today) {
 
 function todayUtc() {
   return new Date().toISOString().slice(0, 10);
-}
-
-function escapeHtml(value) {
-  return String(value).replace(
-    /[&<>"']/g,
-    (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch],
-  );
 }
