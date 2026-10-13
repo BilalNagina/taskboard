@@ -115,9 +115,8 @@ export function memberRoutes({ repo, access, session, limiter, jobs, appUrl, log
     res.json(shown);
   });
 
-  router.post('/invites/accept', auth, async (req, res) => {
-    const { token } = validate(schemas.inviteToken, req.body);
-    const invite = await repo.findInviteByToken(hashToken(token));
+  // Accepting checks the invite was sent to the signed-in user's own email address.
+  async function accept(req, res, invite) {
     if (!invite) throw new HttpError(404, 'this invite link is invalid or has been replaced');
     if (invite.accepted) throw new HttpError(409, 'this invite has already been used');
     if (invite.expired) throw new HttpError(410, 'this invite has expired; ask for a new one');
@@ -130,6 +129,35 @@ export function memberRoutes({ repo, access, session, limiter, jobs, appUrl, log
       await log(req, { workspaceId: result.workspaceId }, 'member.joined', { name: req.user.name, role: result.role });
     }
     res.json({ workspaceId: result.workspaceId, alreadyMember: result.alreadyMember });
+  }
+
+  router.post('/invites/accept', auth, async (req, res) => {
+    const { token } = validate(schemas.inviteToken, req.body);
+    await accept(req, res, await repo.findInviteByToken(hashToken(token)));
+  });
+
+  // ------------------------------------------------------------ my pending invites
+  // Invites addressed to the signed-in user's email can be accepted from inside the app,
+  // without the link (which may not have arrived, or may have been replaced by a resend).
+
+  router.get('/me/invites', auth, async (req, res) => {
+    const invites = await repo.invitesForEmail(req.user.email);
+    res.json(invites.map(({ email, ...invite }) => invite));
+  });
+
+  router.post('/me/invites/:id/accept', auth, async (req, res) => {
+    const id = parseId(req.params.id, 'invite');
+    const invite = await repo.getInvite(id);
+    // Someone else's invite answers 404, like any other thing you can't see.
+    await accept(req, res, invite && invite.email === req.user.email ? { ...invite, accepted: false } : null);
+  });
+
+  router.delete('/me/invites/:id', auth, async (req, res) => {
+    const id = parseId(req.params.id, 'invite');
+    const invite = await repo.getInvite(id);
+    if (!invite || invite.email !== req.user.email) throw new HttpError(404, 'invite not found');
+    await repo.revokeInvite(id);
+    res.status(204).end();
   });
 
   return router;

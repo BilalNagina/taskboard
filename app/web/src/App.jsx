@@ -58,9 +58,11 @@ function RequireAuth({ children }) {
   return children;
 }
 
+// Already signed in: skip the form and go where the link was heading (an invite, say).
 function GuestOnly({ children }) {
   const { data: user, isPending } = useMe();
+  const next = new URLSearchParams(useLocation().search).get('next');
   if (isPending) return <Splash />;
-  if (user) return <Navigate to="/app" replace />;
+  if (user) return <Navigate to={next?.startsWith('/') && !next.startsWith('//') ? next : '/app'} replace />;
   return children;
 }

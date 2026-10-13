@@ -5,7 +5,7 @@ import Icon from '../../components/Icon.jsx';
 import { useToast } from '../../components/Toaster.jsx';
 import { Avatar, Dropdown, Logo, PromptDialog } from '../../components/ui.jsx';
 import { api } from '../../lib/api.js';
-import { keys, useBoards, useMe, useWorkspaces } from '../../lib/queries.js';
+import { keys, useBoards, useMe, useMyInvites, useWorkspaces } from '../../lib/queries.js';
 import { applyTheme } from '../../lib/theme.js';
 
 // The workspace the sidebar shows. Pages set it from the URL (workspace page) or from
@@ -54,6 +54,7 @@ export default function AppLayout() {
             </button>
             <Logo to="/app" />
           </header>
+          <PendingInvites onJoined={setWorkspaceId} />
           <Outlet />
         </div>
       </div>
@@ -253,5 +254,57 @@ function UserMenu() {
         <Icon name="logout" size={16} /> Sign out
       </button>
     </Dropdown>
+  );
+}
+
+function PendingInvites({ onJoined }) {
+  const { data: invites = [] } = useMyInvites();
+  const [busy, setBusy] = useState(null);
+  const client = useQueryClient();
+  const navigate = useNavigate();
+  const toast = useToast();
+  if (!invites.length) return null;
+
+  async function respond(invite, join) {
+    setBusy(invite.id);
+    try {
+      if (join) {
+        const { workspaceId } = await api.acceptMyInvite(invite.id);
+        await client.invalidateQueries({ queryKey: keys.workspaces });
+        onJoined(workspaceId);
+        toast(`You joined ${invite.workspaceName}`, 'success');
+        navigate(`/app/w/${workspaceId}`);
+      } else {
+        await api.declineMyInvite(invite.id);
+        toast('Invitation declined');
+      }
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      setBusy(null);
+      await client.invalidateQueries({ queryKey: keys.myInvites });
+    }
+  }
+
+  return (
+    <div className="invite-banners">
+      {invites.map((invite) => (
+        <div key={invite.id} className="invite-banner" role="status">
+          <span className="ws-mark sm">{invite.workspaceName[0]?.toUpperCase()}</span>
+          <p>
+            <b>{invite.invitedBy?.name ?? 'A teammate'}</b> invited you to join <b>{invite.workspaceName}</b> as{' '}
+            {invite.role === 'owner' ? 'an' : 'a'} {invite.role}.
+          </p>
+          <div className="invite-banner-actions">
+            <button className="btn btn-primary btn-sm" onClick={() => respond(invite, true)} disabled={busy === invite.id}>
+              Join
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={() => respond(invite, false)} disabled={busy === invite.id}>
+              Decline
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }

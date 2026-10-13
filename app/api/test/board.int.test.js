@@ -196,6 +196,36 @@ describe('boards, teams and activity', { skip: skipIntegration }, () => {
     assert.equal((await request(app).post('/api/invites/lookup').send({ token: secondToken })).status, 404);
   });
 
+  test('invites can be accepted or declined from inside the app, without the link', async () => {
+    const owner = await signUp('Hana');
+    const invitee = await signUp('Ines');
+    const other = await signUp('Otto');
+    const invitesUrl = `/api/workspaces/${owner.workspace.id}/invites`;
+    const { body: created } = await owner.agent.post(invitesUrl).send({ email: invitee.email, role: 'member' });
+    await owner.agent.post(`/api/invites/${created.invite.id}/resend`); // replacing the link doesn't matter in-app
+
+    const mine = (await invitee.agent.get('/api/me/invites')).body;
+    assert.equal(mine.length, 1);
+    assert.equal(mine[0].workspaceName, owner.workspace.name);
+    assert.equal(mine[0].invitedBy.name, 'Hana');
+    assert.deepEqual((await other.agent.get('/api/me/invites')).body, [], "other people don't see it");
+    assert.equal((await other.agent.post(`/api/me/invites/${created.invite.id}/accept`)).status, 404);
+    assert.equal((await other.agent.delete(`/api/me/invites/${created.invite.id}`)).status, 404);
+
+    const accepted = await invitee.agent.post(`/api/me/invites/${created.invite.id}/accept`);
+    assert.equal(accepted.status, 200);
+    assert.equal(accepted.body.workspaceId, owner.workspace.id);
+    assert.equal((await invitee.agent.get('/api/workspaces')).body.find((w) => w.id === owner.workspace.id).role, 'member');
+    assert.deepEqual((await invitee.agent.get('/api/me/invites')).body, []);
+    assert.equal((await invitee.agent.post(`/api/me/invites/${created.invite.id}/accept`)).status, 404, 'already used');
+
+    // Declining removes the invite for good.
+    const { body: second } = await owner.agent.post(invitesUrl).send({ email: other.email, role: 'viewer' });
+    assert.equal((await other.agent.delete(`/api/me/invites/${second.invite.id}`)).status, 204);
+    assert.deepEqual((await other.agent.get('/api/me/invites')).body, []);
+    assert.equal((await owner.agent.get(invitesUrl)).body.length, 0);
+  });
+
   test('members: role changes, removal, and a workspace always keeps an owner', async () => {
     const owner = await signUp('Nora');
     const member = await signUp('Leo');
