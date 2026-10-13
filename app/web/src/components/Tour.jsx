@@ -15,6 +15,11 @@ const STEPS = [
     body: 'Boards and the people who work on them live in a workspace. Switch between workspaces, or make one for another team, here.',
   },
   {
+    target: 'palette',
+    title: 'Jump anywhere',
+    body: 'Press Ctrl+K (⌘K on a Mac) to find tasks, open boards and run commands. Press ? to see every keyboard shortcut.',
+  },
+  {
     target: 'boards',
     title: 'Boards',
     body: 'Each board is a set of columns and cards. Press + to start one from a template: sprint planning, content calendar or hiring pipeline.',

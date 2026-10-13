@@ -6,7 +6,7 @@ import { parseId, schemas, validate } from '../validation.js';
 
 // Workspace members and invitations. Owners manage both; anyone can see who's in a
 // workspace they belong to. Invites are accepted by the invited email address only.
-export function memberRoutes({ repo, access, session, limiter, jobs, appUrl, log }) {
+export function memberRoutes({ repo, access, limits, session, limiter, jobs, appUrl, log }) {
   const router = express.Router();
   const auth = session.requireAuth;
 
@@ -74,6 +74,7 @@ export function memberRoutes({ repo, access, session, limiter, jobs, appUrl, log
     }
     const existing = await repo.findUserByEmail(email);
     if (existing && (await repo.getMember(id, existing.id))) throw new HttpError(409, `${email} is already in this workspace`);
+    await limits.invite(id, email);
 
     const token = newToken();
     const invite = await repo.createInvite({ workspaceId: id, email, role, tokenHash: hashToken(token), invitedBy: req.user.id, ttlDays: INVITE_TTL_DAYS });
@@ -123,6 +124,7 @@ export function memberRoutes({ repo, access, session, limiter, jobs, appUrl, log
     if (invite.email !== req.user.email) {
       throw new HttpError(403, `this invite is for ${invite.email}; sign in with that email to accept it`);
     }
+    if (!(await repo.getMember(invite.workspaceId, req.user.id))) await limits.join(invite.workspaceId);
     const result = await repo.acceptInvite(invite.id, req.user.id);
     if (!result) throw new HttpError(410, 'this invite has expired; ask for a new one');
     if (!result.alreadyMember) {

@@ -1,7 +1,7 @@
 // "New board": a name and a template to start from.
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import Icon from '../../components/Icon.jsx';
 import { Dialog, Field } from '../../components/ui.jsx';
 import { api } from '../../lib/api.js';
@@ -42,9 +42,28 @@ export default function NewBoardDialog({ workspace, onClose }) {
     }
   }
 
+  // Say so up front when the plan has no room for another board.
+  const limit = workspace.limits?.boards ?? null;
+  const full = limit !== null && workspace.boardCount >= limit;
+
   return (
     <Dialog title="New board" description={`In ${workspace.name}`} onClose={onClose} wide>
       <form onSubmit={submit} className="new-board">
+        {full && (
+          <p className="notice notice-warning">
+            <Icon name="zap" size={16} />
+            <span>
+              {workspace.name} has {workspace.boardCount} boards, the most the {workspace.limits.name} plan includes.{' '}
+              {workspace.role === 'owner' ? (
+                <Link to={`/app/w/${workspace.id}/admin`} onClick={onClose}>
+                  Change the plan
+                </Link>
+              ) : (
+                'Ask an owner to change the plan.'
+              )}
+            </span>
+          </p>
+        )}
         <Field label="Board name" error={error}>
           {(props) => (
             <input {...props} className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={80} placeholder="Website launch" required />
@@ -90,7 +109,7 @@ export default function NewBoardDialog({ workspace, onClose }) {
           <button type="button" className="btn btn-ghost" onClick={onClose}>
             Cancel
           </button>
-          <button type="submit" className="btn btn-primary" disabled={busy || !name.trim()}>
+          <button type="submit" className="btn btn-primary" disabled={busy || full || !name.trim()}>
             Create board
           </button>
         </div>

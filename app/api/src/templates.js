@@ -155,6 +155,11 @@ export const TEMPLATES = {
         checklist: ['Read the description', 'Tick off this item', 'Leave a comment (type @ to mention someone)'],
       },
       {
+        title: 'Press Ctrl+K to jump anywhere',
+        column: 0,
+        description: 'Search tasks, open boards and run commands from the keyboard (⌘K on a Mac). Press ? to see every shortcut.',
+      },
+      {
         title: 'Start a board from a template',
         column: 0,
         labels: ['Feature'],

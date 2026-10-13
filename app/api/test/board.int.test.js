@@ -260,6 +260,7 @@ describe('boards, teams and activity', { skip: skipIntegration }, () => {
 
     const feed = (await agent.get(`/api/boards/${board.id}/activity`)).body;
     assert.deepEqual(feed.map((e) => e.type).reverse(), [
+      'board.created',
       'task.created',
       'task.assigned',
       'task.moved',

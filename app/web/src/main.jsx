@@ -13,6 +13,7 @@ import './styles/app.css';
 import './styles/board.css';
 import './styles/insights.css';
 import './styles/planning.css';
+import './styles/admin.css';
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

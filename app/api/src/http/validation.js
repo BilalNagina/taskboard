@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PLAN_KEYS } from '../plans.js';
 import { REPEATS } from '../recurrence.js';
 import { TEMPLATE_KEYS } from '../templates.js';
 import { HttpError } from './errors.js';
@@ -137,6 +138,7 @@ export const schemas = {
     note: z.string('note must be text').trim().max(200, 'note must be at most 200 characters').optional(),
   }),
   timesheet: range(62).and(z.object({ userId: z.coerce.number().int().positive('userId must be an id').optional() })),
+  plan: z.object({ plan: z.enum(PLAN_KEYS, `plan must be one of ${PLAN_KEYS.join(', ')}`) }),
   inviteToken: z.object({ token: z.string('token is required').min(20, 'this invite link is invalid').max(200, 'this invite link is invalid') }),
 };
 

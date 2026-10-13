@@ -1,13 +1,16 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, Suspense, useContext, useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
+import CommandPalette from '../../components/CommandPalette.jsx';
 import Icon from '../../components/Icon.jsx';
 import NotificationBell from '../../components/NotificationBell.jsx';
+import ShortcutsDialog from '../../components/ShortcutsDialog.jsx';
 import { TimerPill } from '../../components/Timer.jsx';
 import { useToast } from '../../components/Toaster.jsx';
 import Tour from '../../components/Tour.jsx';
 import { Avatar, Dropdown, Logo, PromptDialog } from '../../components/ui.jsx';
 import { api } from '../../lib/api.js';
+import { modKey } from '../../lib/format.js';
 import { keys, useBoards, useMe, useMyInvites, useWorkspaces } from '../../lib/queries.js';
 import { applyTheme } from '../../lib/theme.js';
 import NewBoardDialog from './NewBoardDialog.jsx';
@@ -29,13 +32,57 @@ export function rememberedWorkspace() {
   }
 }
 
+// Saves the theme to the account (the page switches straight away).
+function useSetTheme() {
+  const client = useQueryClient();
+  const toast = useToast();
+  return async (theme) => {
+    applyTheme(theme);
+    try {
+      const { user: updated } = await api.updateProfile({ theme });
+      client.setQueryData(keys.me, updated);
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  };
+}
+
+function useSignOut() {
+  const client = useQueryClient();
+  const navigate = useNavigate();
+  return async () => {
+    await api.logout().catch(() => {});
+    client.setQueryData(keys.me, null);
+    client.removeQueries({ predicate: (q) => q.queryKey[0] !== 'me' });
+    navigate('/login');
+  };
+}
+
+// Single-letter shortcuts are ignored while typing, and while a dialog, the palette or
+// the tour is open.
+const isTyping = (el) => el?.closest?.('input, textarea, select, [contenteditable="true"]');
+const overlayOpen = () => document.querySelector('.dialog-backdrop, .palette-backdrop, .tour');
+
+// "G then <letter>" pages; A (admin) is checked against the role where it's used.
+const GO_TO = { b: '', d: '/dashboard', c: '/calendar', s: '/search', t: '/timesheet', m: '/members', a: '/admin' };
+
 export default function AppLayout() {
   const [workspaceId, setWorkspaceIdState] = useState(rememberedWorkspace);
   const [navOpen, setNavOpen] = useState(false);
   const [touring, setTouring] = useState(false);
+  const [palette, setPalette] = useState(null); // null, or { mode: 'search' | 'task' }
+  const [overlay, setOverlay] = useState(null); // 'shortcuts' | 'board'
   const { data: me } = useMe();
+  const { data: workspaces = [] } = useWorkspaces();
+  const workspace = workspaces.find((w) => w.id === workspaceId) ?? workspaces[0];
+  const { data: boards = [] } = useBoards(workspace?.id);
   const client = useQueryClient();
   const location = useLocation();
+  const navigate = useNavigate();
+  const setTheme = useSetTheme();
+  const signOut = useSignOut();
+  const boardId = Number(location.pathname.match(/^\/app\/boards\/(\d+)/)?.[1]) || null;
+  const taskId = Number(new URLSearchParams(location.search).get('task')) || null;
 
   // New accounts see the welcome tour once.
   useEffect(() => {
@@ -65,8 +112,65 @@ export default function AppLayout() {
   // Close the mobile menu after navigating.
   useEffect(() => setNavOpen(false), [location.pathname]);
 
+  // Keyboard shortcuts. Re-registered each render so they always see the current page.
+  useEffect(() => {
+    let pendingG = null;
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPalette((open) => (open ? null : { mode: 'search' }));
+        return;
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey || isTyping(e.target) || overlayOpen()) return;
+      const key = e.key.toLowerCase();
+      if (pendingG) {
+        clearTimeout(pendingG);
+        pendingG = null;
+        const path = GO_TO[key];
+        if (path !== undefined && workspace && (key !== 'a' || workspace.role === 'owner')) {
+          e.preventDefault();
+          navigate(`/app/w/${workspace.id}${path}`);
+        }
+        return;
+      }
+      if (key === 'g') {
+        pendingG = setTimeout(() => (pendingG = null), 1500);
+      } else if (e.key === '?') {
+        e.preventDefault();
+        setOverlay('shortcuts');
+      } else if (e.key === '/') {
+        e.preventDefault();
+        setPalette({ mode: 'search' });
+      } else if (key === 'c' && boardId && workspace?.role !== 'viewer') {
+        e.preventDefault();
+        setPalette({ mode: 'task' });
+      } else if (key === 'f' && boardId) {
+        const filter = document.querySelector('.filter-search input');
+        if (filter) {
+          e.preventDefault();
+          filter.focus();
+        }
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      clearTimeout(pendingG);
+    };
+  });
+
+  const context = {
+    workspaceId,
+    setWorkspaceId,
+    startTour: () => setTouring(true),
+    openPalette: () => setPalette({ mode: 'search' }),
+    showShortcuts: () => setOverlay('shortcuts'),
+    setTheme,
+    signOut,
+  };
+
   return (
-    <WorkspaceContext.Provider value={{ workspaceId, setWorkspaceId, startTour: () => setTouring(true) }}>
+    <WorkspaceContext.Provider value={context}>
       <div className={`app ${navOpen ? 'nav-open' : ''}`}>
         <Sidebar onClose={() => setNavOpen(false)} />
         <div className="app-scrim" onClick={() => setNavOpen(false)} />
@@ -82,16 +186,42 @@ export default function AppLayout() {
             </span>
           </header>
           <PendingInvites onJoined={setWorkspaceId} />
-          <Outlet />
+          <Suspense fallback={<div className="page-loading"><span className="spinner" /></div>}>
+            <Outlet />
+          </Suspense>
         </div>
       </div>
       {touring && me && <Tour name={me.name.split(' ')[0]} onDone={endTour} />}
+      {palette && (
+        <CommandPalette
+          initialMode={palette.mode}
+          workspace={workspace}
+          workspaces={workspaces}
+          boards={boards}
+          boardId={boardId}
+          taskId={taskId}
+          onClose={() => setPalette(null)}
+          actions={{
+            newBoard: () => setOverlay('board'),
+            showShortcuts: () => setOverlay('shortcuts'),
+            startTour: () => setTouring(true),
+            setTheme,
+            signOut,
+            switchWorkspace: (id) => {
+              setWorkspaceId(id);
+              navigate(`/app/w/${id}`);
+            },
+          }}
+        />
+      )}
+      {overlay === 'shortcuts' && <ShortcutsDialog onClose={() => setOverlay(null)} />}
+      {overlay === 'board' && workspace && <NewBoardDialog workspace={workspace} onClose={() => setOverlay(null)} />}
     </WorkspaceContext.Provider>
   );
 }
 
 function Sidebar({ onClose }) {
-  const { workspaceId, setWorkspaceId } = useCurrentWorkspace();
+  const { workspaceId, setWorkspaceId, openPalette } = useCurrentWorkspace();
   const { data: workspaces = [] } = useWorkspaces();
   const workspace = workspaces.find((w) => w.id === workspaceId) ?? workspaces[0];
   const { data: boards = [] } = useBoards(workspace?.id);
@@ -153,6 +283,12 @@ function Sidebar({ onClose }) {
         </button>
       </Dropdown>
 
+      <button className="palette-trigger" onClick={openPalette} data-tour="palette">
+        <Icon name="search" size={16} />
+        <span>Search or jump to…</span>
+        <kbd>{modKey} K</kbd>
+      </button>
+
       <nav className="sidebar-nav" aria-label="Main">
         {workspace && (
           <>
@@ -177,6 +313,11 @@ function Sidebar({ onClose }) {
               <Icon name="users" /> Members
               <span className="nav-count">{workspace.memberCount}</span>
             </NavLink>
+            {workspace.role === 'owner' && (
+              <NavLink to={`/app/w/${workspace.id}/admin`} className="nav-item">
+                <Icon name="shield" /> Admin
+              </NavLink>
+            )}
           </>
         )}
         <NavLink to="/app/settings" className="nav-item">
@@ -233,27 +374,7 @@ const THEMES = [
 
 function UserMenu() {
   const { data: user } = useMe();
-  const { startTour } = useCurrentWorkspace();
-  const client = useQueryClient();
-  const navigate = useNavigate();
-  const toast = useToast();
-
-  async function setTheme(theme) {
-    applyTheme(theme);
-    try {
-      const { user: updated } = await api.updateProfile({ theme });
-      client.setQueryData(keys.me, updated);
-    } catch (err) {
-      toast(err.message, 'error');
-    }
-  }
-
-  async function signOut() {
-    await api.logout().catch(() => {});
-    client.setQueryData(keys.me, null);
-    client.removeQueries({ predicate: (q) => q.queryKey[0] !== 'me' });
-    navigate('/login');
-  }
+  const { startTour, showShortcuts, setTheme, signOut } = useCurrentWorkspace();
 
   if (!user) return null;
   return (
@@ -276,6 +397,9 @@ function UserMenu() {
       </NavLink>
       <button className="menu-item" onClick={startTour}>
         <Icon name="compass" size={16} /> Take the tour
+      </button>
+      <button className="menu-item" onClick={showShortcuts}>
+        <Icon name="zap" size={16} /> Keyboard shortcuts
       </button>
       <hr />
       <div className="menu-label">Theme</div>
