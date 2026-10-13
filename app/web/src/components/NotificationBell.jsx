@@ -1,5 +1,20 @@
 // Bell with an unread count; opens a list of recent notifications.
-import { useEffect, useRef, useState } from 'react';
+// The list is rendered at the end of <body>, positioned next to the bell, because the
+// sidebar scrolls (overflow) and would otherwise crop anything wider than itself.
+
+const MENU_WIDTH = 380;
+const GAP = 8;
+
+// Below the bell, starting at its left edge, nudged back inside the window if needed.
+function placeMenu(button) {
+  const rect = button.getBoundingClientRect();
+  const width = Math.min(MENU_WIDTH, window.innerWidth - 2 * GAP);
+  const left = Math.max(GAP, Math.min(rect.left, window.innerWidth - width - GAP));
+  const top = rect.bottom + 6;
+  return { left, top, width, maxHeight: window.innerHeight - top - GAP };
+}
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
 import { api } from '../lib/api.js';
@@ -28,6 +43,9 @@ function sentence(n) {
 export default function NotificationBell() {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
+  const buttonRef = useRef(null);
+  const menuRef = useRef(null);
+  const [position, setPosition] = useState(null);
   const { data: count } = useUnreadCount();
   const { data, isPending } = useNotifications(open);
   const client = useQueryClient();
@@ -37,13 +55,26 @@ export default function NotificationBell() {
   useEffect(() => {
     if (!open) return;
     client.invalidateQueries({ queryKey: keys.notifications });
-    const onClick = (e) => !ref.current?.contains(e.target) && setOpen(false);
+    const onClick = (e) => !ref.current?.contains(e.target) && !menuRef.current?.contains(e.target) && setOpen(false);
     const onKey = (e) => e.key === 'Escape' && setOpen(false);
     document.addEventListener('mousedown', onClick);
     document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('mousedown', onClick);
       document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  // Re-place the menu when it opens and whenever the window changes size or scrolls.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const place = () => setPosition(placeMenu(buttonRef.current));
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
     };
   }, [open]);
 
@@ -66,12 +97,18 @@ export default function NotificationBell() {
 
   return (
     <div className="bell" ref={ref}>
-      <button className="icon-btn bell-button" onClick={() => setOpen(!open)} aria-expanded={open} aria-label={unread ? `Notifications, ${unread} unread` : 'Notifications'}>
+      <button ref={buttonRef} className="icon-btn bell-button" onClick={() => setOpen(!open)} aria-expanded={open} aria-label={unread ? `Notifications, ${unread} unread` : 'Notifications'}>
         <Icon name="bell" size={18} />
         {unread > 0 && <span className="bell-count">{unread > 99 ? '99+' : unread}</span>}
       </button>
-      {open && (
-        <div className="menu bell-menu" role="dialog" aria-label="Notifications">
+      {open && position && createPortal(
+        <div
+          ref={menuRef}
+          className="menu bell-menu"
+          role="dialog"
+          aria-label="Notifications"
+          style={{ left: position.left, top: position.top, width: position.width, maxHeight: position.maxHeight }}
+        >
           <div className="bell-head">
             <b>Notifications</b>
             {unread > 0 && (
@@ -108,7 +145,8 @@ export default function NotificationBell() {
               </button>
             ))}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
