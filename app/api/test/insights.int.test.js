@@ -183,8 +183,9 @@ describe('dashboard, calendar, search, notifications, avatars, exports', { skip:
     const csv = await agent.get(`/api/boards/${board.id}/export.csv`);
     assert.equal(csv.status, 200);
     assert.match(csv.headers['content-type'], /^text\/csv/);
-    assert.match(csv.headers['content-disposition'], /attachment; filename="My-tasks.csv"/);
-    const lines = csv.text.replace(/^FEFF/, '').split('\r\n');
+    assert.match(csv.headers['content-disposition'], /attachment; filename="?My-tasks.csv"?/);
+    assert.equal(csv.text.charCodeAt(0), 0xfeff, 'starts with a byte-order mark for Excel');
+    const lines = csv.text.slice(1).split(String.fromCharCode(13, 10));
     assert.equal(lines[0], 'Title,Column,Status,Priority,Due date,Assignees,Labels,Checklist,Description,Created,Completed');
     assert.match(lines[1], /^'=cmd\|calc,To do,Open,Urgent,,,,,"line one\nline, two",/);
     assert.ok(csv.text.includes('"Ship ""v2""",Done,Done,,2026-11-01'));

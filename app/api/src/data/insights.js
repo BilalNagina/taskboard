@@ -79,10 +79,10 @@ export function insightsRepo(db) {
           params,
         ),
         all(
-          `SELECT ${ROW} FROM ${FROM} JOIN task_assignees a ON a.task_id = t.id AND a.user_id = $3
+          `SELECT ${ROW} FROM ${FROM} JOIN task_assignees a ON a.task_id = t.id AND a.user_id = $2
             WHERE b.workspace_id = $1 AND NOT t.done
             ORDER BY t.due_date NULLS LAST, t.id LIMIT 8`,
-          [workspaceId, today, userId],
+          [workspaceId, userId],
         ),
       ]);
       return { totals, completedByDay: completed, createdByDay: created, byPriority, byBoard, byAssignee, overdue, upcoming, mine };
@@ -129,12 +129,14 @@ export function insightsRepo(db) {
       if (status === 'open') where.push('NOT t.done');
       if (status === 'done') where.push('t.done');
       if (boardId) where.push(`t.board_id = ${param(boardId)}`);
-      if (due) {
+      // Every parameter must appear in the SQL (PostgreSQL can't type an unused one),
+      // so today is only added for the filters that compare against it.
+      if (due === 'none') where.push('t.due_date IS NULL');
+      else if (due) {
         const d = param(today);
         if (due === 'overdue') where.push(`NOT t.done AND t.due_date < ${d}::date`);
         if (due === 'today') where.push(`t.due_date = ${d}::date`);
         if (due === 'week') where.push(`t.due_date BETWEEN ${d}::date AND ${d}::date + 6`);
-        if (due === 'none') where.push('t.due_date IS NULL');
       }
       return all(`SELECT ${ROW} FROM ${FROM} WHERE ${where.join(' AND ')} ORDER BY ${rank} LIMIT 100`, params);
     },
