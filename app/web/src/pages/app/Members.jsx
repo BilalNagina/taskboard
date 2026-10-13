@@ -77,7 +77,7 @@ export default function Members() {
           const isMe = member.id === me?.id;
           return (
             <div key={member.id} className="member-row">
-              <Avatar name={member.name} seed={member.email} />
+              <Avatar name={member.name} seed={member.email} url={member.avatarUrl} />
               <div className="member-who">
                 <b>
                   {member.name} {isMe && <span className="badge">You</span>}

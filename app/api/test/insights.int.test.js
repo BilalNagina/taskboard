@@ -121,11 +121,13 @@ describe('dashboard, calendar, search, notifications, avatars, exports', { skip:
     assert.equal((await bo.agent.get('/api/notifications')).body.items.length, 1, 'comment notifications are off for Bo');
     await owner.agent.post(`/api/tasks/${task.id}/comments`).send({ body: 'And you too @Bo', mentions: [bo.user.id] });
     assert.equal((await bo.agent.get('/api/notifications')).body.items[0].type, 'mentioned');
+    alexFeed = (await alex.agent.get('/api/notifications')).body;
+    assert.deepEqual(alexFeed.items.map((n) => n.type), ['comment', 'mentioned', 'assigned'], 'Alex hears about a comment that mentions someone else');
 
     // Read state belongs to each user.
-    const firstId = alexFeed.items[1].id;
+    const firstId = alexFeed.items[2].id;
     assert.equal((await bo.agent.post('/api/notifications/read').send({ ids: [firstId] })).body.unread, 2, "can't mark someone else's");
-    assert.equal((await alex.agent.post('/api/notifications/read').send({ ids: [firstId] })).body.unread, 1);
+    assert.equal((await alex.agent.post('/api/notifications/read').send({ ids: [firstId] })).body.unread, 2);
     assert.equal((await alex.agent.post('/api/notifications/read').send({})).body.unread, 0);
     assert.equal((await alex.agent.get('/api/notifications/unread-count')).body.unread, 0);
 

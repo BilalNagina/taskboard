@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import Icon from '../../components/Icon.jsx';
+import NotificationBell from '../../components/NotificationBell.jsx';
 import { useToast } from '../../components/Toaster.jsx';
 import { Avatar, Dropdown, Logo, PromptDialog } from '../../components/ui.jsx';
 import { api } from '../../lib/api.js';
@@ -53,6 +54,9 @@ export default function AppLayout() {
               <Icon name="menu" size={20} />
             </button>
             <Logo to="/app" />
+            <span style={{ marginLeft: 'auto' }}>
+              <NotificationBell />
+            </span>
           </header>
           <PendingInvites onJoined={setWorkspaceId} />
           <Outlet />
@@ -89,9 +93,12 @@ function Sidebar({ onClose }) {
     <aside className="sidebar">
       <div className="sidebar-head">
         <Logo to="/app" />
-        <button className="icon-btn sidebar-close" onClick={onClose} aria-label="Close menu">
-          <Icon name="x" />
-        </button>
+        <div className="sidebar-head-actions">
+          <NotificationBell />
+          <button className="icon-btn sidebar-close" onClick={onClose} aria-label="Close menu">
+            <Icon name="x" />
+          </button>
+        </div>
       </div>
 
       <Dropdown
@@ -132,7 +139,16 @@ function Sidebar({ onClose }) {
         {workspace && (
           <>
             <NavLink to={`/app/w/${workspace.id}`} end className="nav-item">
-              <Icon name="home" /> Overview
+              <Icon name="home" /> Boards
+            </NavLink>
+            <NavLink to={`/app/w/${workspace.id}/dashboard`} className="nav-item">
+              <Icon name="chart" /> Dashboard
+            </NavLink>
+            <NavLink to={`/app/w/${workspace.id}/calendar`} className="nav-item">
+              <Icon name="calendar" /> Calendar
+            </NavLink>
+            <NavLink to={`/app/w/${workspace.id}/search`} className="nav-item">
+              <Icon name="search" /> Search
             </NavLink>
             <NavLink to={`/app/w/${workspace.id}/members`} className="nav-item">
               <Icon name="users" /> Members
@@ -228,7 +244,7 @@ function UserMenu() {
       align="up"
       trigger={({ toggle, open }) => (
         <button className="user-button" onClick={toggle} aria-expanded={open}>
-          <Avatar name={user.name} seed={user.email} />
+          <Avatar name={user.name} seed={user.email} url={user.avatarUrl} />
           <span className="user-text">
             <b>{user.name}</b>
             <small>{user.email}</small>

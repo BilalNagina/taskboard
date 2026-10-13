@@ -5,11 +5,11 @@ import Icon from '../../../components/Icon.jsx';
 import { Dropdown } from '../../../components/ui.jsx';
 import { SortableCard } from './Card.jsx';
 
-export function SortableColumn({ column, cards, canEdit, onAddCard, onRename, onToggleDone, onDelete, ...cardProps }) {
+export function SortableColumn({ column, cards, total, canEdit, dragDisabled, onAddCard, onRename, onToggleDone, onDelete, ...cardProps }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: `c:${column.id}`,
     data: { type: 'column' },
-    disabled: !canEdit,
+    disabled: !canEdit || dragDisabled,
   });
   const [adding, setAdding] = useState(false);
   const [title, setTitle] = useState('');
@@ -59,7 +59,7 @@ export function SortableColumn({ column, cards, canEdit, onAddCard, onRename, on
           <h2 onDoubleClick={() => canEdit && setRenaming(true)}>
             {column.isDone && <Icon name="check" size={14} strokeWidth={2.4} className="kcol-done" />}
             {column.name}
-            <span className="kcol-count">{cards.length}</span>
+            <span className="kcol-count">{total !== undefined && total !== cards.length ? `${cards.length} of ${total}` : cards.length}</span>
           </h2>
         )}
         {canEdit && (
@@ -88,9 +88,9 @@ export function SortableColumn({ column, cards, canEdit, onAddCard, onRename, on
       <SortableContext items={cards.map((c) => `t:${c.id}`)} strategy={verticalListSortingStrategy}>
         <div className="kcol-cards">
           {cards.map((card) => (
-            <SortableCard key={card.id} card={card} disabled={!canEdit} {...cardProps} />
+            <SortableCard key={card.id} card={card} disabled={!canEdit || dragDisabled} {...cardProps} />
           ))}
-          {cards.length === 0 && !adding && <div className="kcol-empty">{canEdit ? 'Drop cards here' : 'No cards'}</div>}
+          {cards.length === 0 && !adding && <div className="kcol-empty">{dragDisabled ? 'No matching cards' : canEdit ? 'Drop cards here' : 'No cards'}</div>}
         </div>
       </SortableContext>
 

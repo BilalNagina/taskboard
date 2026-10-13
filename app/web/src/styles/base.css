@@ -104,6 +104,7 @@ input[type="date"].input { color-scheme: inherit; }
   font-size: 13px; font-weight: 700; color: #fff; letter-spacing: 0.02em;
 }
 .avatar-sm { width: 24px; height: 24px; font-size: 10px; }
+.avatar-img { object-fit: cover; background: var(--bg-subtle); }
 .avatar-lg { width: 56px; height: 56px; font-size: 20px; }
 
 .spinner {
