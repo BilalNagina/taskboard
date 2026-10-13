@@ -2,6 +2,7 @@ import { createContext, Suspense, useContext, useEffect, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import CommandPalette from '../../components/CommandPalette.jsx';
+import ErrorBoundary from '../../components/ErrorBoundary.jsx';
 import Icon from '../../components/Icon.jsx';
 import NotificationBell from '../../components/NotificationBell.jsx';
 import ShortcutsDialog from '../../components/ShortcutsDialog.jsx';
@@ -186,9 +187,11 @@ export default function AppLayout() {
             </span>
           </header>
           <PendingInvites onJoined={setWorkspaceId} />
-          <Suspense fallback={<div className="page-loading"><span className="spinner" /></div>}>
-            <Outlet />
-          </Suspense>
+          <ErrorBoundary resetKey={location.pathname}>
+            <Suspense fallback={<div className="page-loading"><span className="spinner" /></div>}>
+              <Outlet />
+            </Suspense>
+          </ErrorBoundary>
         </div>
       </div>
       {touring && me && <Tour name={me.name.split(' ')[0]} onDone={endTour} />}
