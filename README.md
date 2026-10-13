@@ -1,6 +1,6 @@
-# Taskboard: one app, three ways to production
+# Tasklane: one product, three ways to production
 
-A multi-user task manager (React, Express, PostgreSQL, Redis, S3), deployed three ways from the same repository. Each deployment is production-grade at its own budget level and comes with a handover pack: architecture, runbook, rollback steps and cost.
+**Tasklane** is a task-management web app for small teams (React, Express, PostgreSQL, Redis, S3), deployed three ways from the same repository. Each deployment is production-grade at its own budget level and comes with a handover pack: architecture, runbook, rollback steps and cost.
 
 | Tier | Where it runs | Status |
 |---|---|---|
@@ -10,7 +10,7 @@ A multi-user task manager (React, Express, PostgreSQL, Redis, S3), deployed thre
 
 ## The app
 
-People sign up, organise tasks into boards, set due dates, attach files, and get an email reminder when a task is due.
+A public landing page, accounts with password reset, team workspaces with owner/member/viewer roles, boards with due dates and file attachments, and email reminders. More features are being added in phases (drag-and-drop boards, dashboard, calendar, notifications and more).
 
 - **web:** React (Vite), served as static files by unprivileged NGINX
 - **api:** Express. Accounts with scrypt-hashed passwords and Redis-backed sessions (HttpOnly, SameSite cookies), per-user boards and tasks, file attachments streamed to a private S3 bucket, rate-limited login. `/healthz` (liveness), `/readyz` (checks PostgreSQL and Redis), `/metrics` (Prometheus), structured JSON logs, graceful shutdown
