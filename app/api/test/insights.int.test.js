@@ -184,7 +184,7 @@ describe('dashboard, calendar, search, notifications, avatars, exports', { skip:
     assert.equal(csv.status, 200);
     assert.match(csv.headers['content-type'], /^text\/csv/);
     assert.match(csv.headers['content-disposition'], /attachment; filename="My-tasks.csv"/);
-    const lines = csv.text.replace(/^﻿/, '').split('\r\n');
+    const lines = csv.text.replace(/^FEFF/, '').split('\r\n');
     assert.equal(lines[0], 'Title,Column,Status,Priority,Due date,Assignees,Labels,Checklist,Description,Created,Completed');
     assert.match(lines[1], /^'=cmd\|calc,To do,Open,Urgent,,,,,"line one\nline, two",/);
     assert.ok(csv.text.includes('"Ship ""v2""",Done,Done,,2026-11-01'));
