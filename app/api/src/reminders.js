@@ -26,9 +26,13 @@ export async function scanDueTasks({ repo, queue }) {
 export async function sendReminder({ repo, mailer, appUrl }, { taskId, dueDate }, today = todayUtc()) {
   const task = await repo.reminderDetails(taskId, dueDate);
   if (!task) return { sent: false };
-  await mailer.send(buildReminderEmail(task, appUrl, describeDue(task.dueDate, today)));
+  const when = describeDue(task.dueDate, today);
+  const link = `${appUrl}/app/boards/${task.boardId}?task=${task.id}`;
+  for (const person of task.recipients) {
+    await mailer.send(buildReminderEmail({ ...task, email: person.email, userName: person.name }, link, when));
+  }
   await repo.markReminded(taskId, dueDate);
-  return { sent: true };
+  return { sent: task.recipients.length > 0 };
 }
 
 export function describeDue(dueDate, today) {

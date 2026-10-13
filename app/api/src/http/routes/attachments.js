@@ -8,7 +8,7 @@ export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 // Mounted before the JSON parser: the upload body is the raw file, so a JSON file isn't
 // parsed (and rejected) as a JSON request.
-export function attachmentRoutes({ repo, access, session, storage, limiter, removeFiles }) {
+export function attachmentRoutes({ repo, access, session, storage, limiter, removeFiles, log }) {
   const router = express.Router();
   // Auth is per route: this router sits on /api ahead of the others, so a router-wide
   // check would also run for sign-in requests.
@@ -23,7 +23,7 @@ export function attachmentRoutes({ repo, access, session, storage, limiter, remo
       if (!Buffer.isBuffer(req.body) || req.body.length === 0) throw new HttpError(400, 'the file is empty');
       const filename = parseFilename(req.get('x-filename'));
       if (!filename) throw new HttpError(400, 'X-Filename header is required (1-200 characters)');
-      await access.task(req, taskId, 'member');
+      const a = await access.task(req, taskId, 'member');
       if (!(await limiter.hit(`upload:${req.user.id}`, { limit: 30, windowSeconds: 3600 }))) {
         throw new HttpError(429, 'upload limit reached, try again later');
       }
@@ -38,6 +38,7 @@ export function attachmentRoutes({ repo, access, session, storage, limiter, remo
         await removeFiles(req, [storageKey]);
         throw new HttpError(404, 'task not found');
       }
+      await log(req, a, 'attachment.added', { filename }, taskId);
       res.status(201).json(attachment);
     },
   );

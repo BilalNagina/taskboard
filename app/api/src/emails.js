@@ -22,20 +22,37 @@ export function buildPasswordResetEmail(user, link, ttlMinutes) {
   };
 }
 
-export function buildReminderEmail(task, appUrl, when) {
+export function buildReminderEmail(task, link, when) {
   return {
     to: task.email,
     subject: `Reminder: "${task.title}" is ${when}`,
     text: [
       `Hi ${task.userName},`,
       '',
-      `"${task.title}" on your board "${task.boardName}" is ${when} (${task.dueDate}).`,
+      `"${task.title}" on the board "${task.boardName}" is ${when} (${task.dueDate}).`,
       '',
-      `Open ${BRAND}: ${appUrl}`,
+      `Open the task: ${link}`,
     ].join('\n'),
     html: layout(`<p>Hi ${escapeHtml(task.userName)},</p>
-<p><strong>${escapeHtml(task.title)}</strong> on your board <em>${escapeHtml(task.boardName)}</em> is ${when} (${task.dueDate}).</p>
-<p><a href="${escapeHtml(appUrl)}">Open ${BRAND}</a></p>`),
+<p><strong>${escapeHtml(task.title)}</strong> on the board <em>${escapeHtml(task.boardName)}</em> is ${when} (${task.dueDate}).</p>
+<p><a href="${escapeHtml(link)}">Open the task in ${BRAND}</a></p>`),
+  };
+}
+
+export function buildInviteEmail({ email, inviterName, workspaceName, role }, link, ttlDays) {
+  const article = role === 'owner' ? 'an' : 'a';
+  return {
+    to: email,
+    subject: `${inviterName} invited you to ${workspaceName} on ${BRAND}`,
+    text: [
+      `${inviterName} invited you to join the workspace "${workspaceName}" on ${BRAND} as ${article} ${role}.`,
+      '',
+      `Accept the invitation (valid for ${ttlDays} days):`,
+      link,
+    ].join('\n'),
+    html: layout(`<p><strong>${escapeHtml(inviterName)}</strong> invited you to join the workspace <strong>${escapeHtml(workspaceName)}</strong> on ${BRAND} as ${article} ${role}.</p>
+<p><a href="${escapeHtml(link)}" style="display:inline-block;padding:10px 18px;background:#4f46e5;color:#fff;border-radius:8px;text-decoration:none">Accept invitation</a></p>
+<p style="color:#64748b">The link works for ${ttlDays} days.</p>`),
   };
 }
 

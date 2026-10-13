@@ -26,6 +26,7 @@ const app = createApp({
   ping: () => Promise.all([db.ping(), redis.ping()]),
   logger,
   cookieSecure: config.cookieSecure,
+  appUrl: config.appUrl,
 });
 const server = app.listen(config.port, () => logger.info({ port: config.port }, 'api listening'));
 

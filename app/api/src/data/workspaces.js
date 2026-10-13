@@ -49,26 +49,63 @@ export function workspacesRepo(db) {
       (await one('SELECT role FROM workspace_members WHERE workspace_id = $1 AND user_id = $2', [workspaceId, userId]))
         ?.role ?? null,
 
+    // Every access check returns the role plus the ids callers need for logging.
     boardAccess: (userId, boardId) =>
       one(
-        `SELECT m.role, b.workspace_id AS "workspaceId"
+        `SELECT m.role, b.id AS "boardId", b.workspace_id AS "workspaceId"
            FROM boards b JOIN workspace_members m ON m.workspace_id = b.workspace_id AND m.user_id = $1
           WHERE b.id = $2`,
         [userId, boardId],
       ),
 
+    columnAccess: (userId, columnId) =>
+      one(
+        `SELECT m.role, c.board_id AS "boardId", b.workspace_id AS "workspaceId"
+           FROM board_columns c JOIN boards b ON b.id = c.board_id
+           JOIN workspace_members m ON m.workspace_id = b.workspace_id AND m.user_id = $1
+          WHERE c.id = $2`,
+        [userId, columnId],
+      ),
+
+    labelAccess: (userId, labelId) =>
+      one(
+        `SELECT m.role, l.board_id AS "boardId", b.workspace_id AS "workspaceId"
+           FROM labels l JOIN boards b ON b.id = l.board_id
+           JOIN workspace_members m ON m.workspace_id = b.workspace_id AND m.user_id = $1
+          WHERE l.id = $2`,
+        [userId, labelId],
+      ),
+
     taskAccess: (userId, taskId) =>
       one(
-        `SELECT m.role, t.board_id AS "boardId"
+        `SELECT m.role, t.id AS "taskId", t.board_id AS "boardId", b.workspace_id AS "workspaceId", t.title
            FROM tasks t JOIN boards b ON b.id = t.board_id
            JOIN workspace_members m ON m.workspace_id = b.workspace_id AND m.user_id = $1
           WHERE t.id = $2`,
         [userId, taskId],
       ),
 
+    checklistAccess: (userId, itemId) =>
+      one(
+        `SELECT m.role, i.task_id AS "taskId", t.board_id AS "boardId", b.workspace_id AS "workspaceId"
+           FROM checklist_items i JOIN tasks t ON t.id = i.task_id JOIN boards b ON b.id = t.board_id
+           JOIN workspace_members m ON m.workspace_id = b.workspace_id AND m.user_id = $1
+          WHERE i.id = $2`,
+        [userId, itemId],
+      ),
+
+    commentAccess: (userId, commentId) =>
+      one(
+        `SELECT m.role, c.task_id AS "taskId", c.user_id AS "authorId", t.board_id AS "boardId", b.workspace_id AS "workspaceId"
+           FROM comments c JOIN tasks t ON t.id = c.task_id JOIN boards b ON b.id = t.board_id
+           JOIN workspace_members m ON m.workspace_id = b.workspace_id AND m.user_id = $1
+          WHERE c.id = $2`,
+        [userId, commentId],
+      ),
+
     attachmentAccess: (userId, attachmentId) =>
       one(
-        `SELECT m.role, a.task_id AS "taskId"
+        `SELECT m.role, a.task_id AS "taskId", t.board_id AS "boardId", b.workspace_id AS "workspaceId"
            FROM attachments a JOIN tasks t ON t.id = a.task_id JOIN boards b ON b.id = t.board_id
            JOIN workspace_members m ON m.workspace_id = b.workspace_id AND m.user_id = $1
           WHERE a.id = $2`,

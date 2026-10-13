@@ -1,10 +1,13 @@
 import express from 'express';
+import { HttpError } from '../errors.js';
 import { parseId, schemas, validate } from '../validation.js';
 
-// Boards and the tasks on them. Every handler checks the user's workspace role first.
-export function boardRoutes({ repo, access, session, removeFiles }) {
+// Boards, their columns and labels, and the board activity feed.
+export function boardRoutes({ repo, access, session, removeFiles, log }) {
   const router = express.Router();
   router.use(session.requireAuth);
+
+  // ------------------------------------------------------------ boards
 
   router.get('/boards/:id', async (req, res) => {
     const id = parseId(req.params.id, 'board');
@@ -12,11 +15,28 @@ export function boardRoutes({ repo, access, session, removeFiles }) {
     res.json({ ...(await repo.getBoard(id)), role });
   });
 
+  // Everything the board view needs in one request.
+  router.get('/boards/:id/full', async (req, res) => {
+    const id = parseId(req.params.id, 'board');
+    const { role, workspaceId } = await access.board(req, id);
+    const [board, columns, cards, labels, members] = await Promise.all([
+      repo.getBoard(id),
+      repo.listColumns(id),
+      repo.listCards(id),
+      repo.listLabels(id),
+      repo.listMembers(workspaceId),
+    ]);
+    res.json({ board: { ...board, role }, columns, cards, labels, members });
+  });
+
   router.patch('/boards/:id', async (req, res) => {
     const id = parseId(req.params.id, 'board');
     const { name } = validate(schemas.board, req.body);
-    await access.board(req, id, 'member');
-    res.json(await repo.renameBoard(id, name));
+    const a = await access.board(req, id, 'member');
+    const before = await repo.getBoard(id);
+    const board = await repo.renameBoard(id, name);
+    if (before.name !== name) await log(req, a, 'board.renamed', { from: before.name, to: name });
+    res.json(board);
   });
 
   router.delete('/boards/:id', async (req, res) => {
@@ -26,30 +46,78 @@ export function boardRoutes({ repo, access, session, removeFiles }) {
     res.status(204).end();
   });
 
-  router.get('/boards/:id/tasks', async (req, res) => {
+  router.get('/boards/:id/activity', async (req, res) => {
     const id = parseId(req.params.id, 'board');
     await access.board(req, id);
-    res.json(await repo.listTasks(id));
+    const before = req.query.before ? parseId(req.query.before, 'activity') : null;
+    res.json(await repo.boardActivity(id, { before }));
   });
 
-  router.post('/boards/:id/tasks', async (req, res) => {
+  // ------------------------------------------------------------ columns
+
+  router.post('/boards/:id/columns', async (req, res) => {
     const id = parseId(req.params.id, 'board');
-    const task = validate(schemas.newTask, req.body);
+    const body = validate(schemas.column, req.body);
+    const a = await access.board(req, id, 'member');
+    const column = await repo.createColumn(id, body);
+    await log(req, a, 'column.created', { name: column.name });
+    res.status(201).json(column);
+  });
+
+  router.patch('/columns/:id', async (req, res) => {
+    const id = parseId(req.params.id, 'column');
+    const changes = validate(schemas.updateColumn, req.body);
+    const a = await access.column(req, id, 'member');
+    const before = await repo.getColumn(id);
+    const column = await repo.updateColumn(id, changes);
+    if (changes.name && changes.name !== before.name) await log(req, a, 'column.renamed', { from: before.name, to: column.name });
+    res.json(column);
+  });
+
+  router.post('/columns/:id/move', async (req, res) => {
+    const id = parseId(req.params.id, 'column');
+    const { index } = validate(schemas.moveColumn, req.body);
+    await access.column(req, id, 'member');
+    await repo.moveColumn(id, index);
+    res.status(204).end();
+  });
+
+  // Cards in the column move to ?moveTo= (or the first remaining column) first.
+  router.delete('/columns/:id', async (req, res) => {
+    const id = parseId(req.params.id, 'column');
+    const moveTo = req.query.moveTo ? parseId(req.query.moveTo, 'column') : null;
+    const a = await access.column(req, id, 'member');
+    const column = await repo.getColumn(id);
+    const result = await repo.deleteColumn(id, moveTo);
+    if (!result) throw new HttpError(409, "a board needs at least one column");
+    await log(req, a, 'column.deleted', { name: column.name });
+    res.json(result);
+  });
+
+  // ------------------------------------------------------------ labels
+
+  router.post('/boards/:id/labels', async (req, res) => {
+    const id = parseId(req.params.id, 'board');
+    const body = validate(schemas.label, req.body);
     await access.board(req, id, 'member');
-    res.status(201).json(await repo.createTask(id, req.user.id, task));
+    const label = await repo.createLabel(id, body);
+    if (!label) throw new HttpError(409, 'this board already has a label with that name');
+    res.status(201).json(label);
   });
 
-  router.patch('/tasks/:id', async (req, res) => {
-    const id = parseId(req.params.id, 'task');
-    const changes = validate(schemas.updateTask, req.body);
-    await access.task(req, id, 'member');
-    res.json(await repo.updateTask(id, changes));
+  router.patch('/labels/:id', async (req, res) => {
+    const id = parseId(req.params.id, 'label');
+    const changes = validate(schemas.updateLabel, req.body);
+    await access.label(req, id, 'member');
+    const label = await repo.updateLabel(id, changes);
+    if (!label) throw new HttpError(409, 'this board already has a label with that name');
+    res.json(label);
   });
 
-  router.delete('/tasks/:id', async (req, res) => {
-    const id = parseId(req.params.id, 'task');
-    await access.task(req, id, 'member');
-    await removeFiles(req, await repo.deleteTask(id));
+  router.delete('/labels/:id', async (req, res) => {
+    const id = parseId(req.params.id, 'label');
+    await access.label(req, id, 'member');
+    await repo.deleteLabel(id);
     res.status(204).end();
   });
 

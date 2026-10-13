@@ -1,31 +1,43 @@
-// Callers check access first (workspacesRepo.boardAccess / taskAccess); these queries
-// work on ids they've already been allowed to touch.
+// Boards, their columns and labels. Callers check access first; these queries work on
+// ids they've already been allowed to touch.
 
 const BOARD = `b.id, b.workspace_id AS "workspaceId", b.name, b.created_at AS "createdAt",
   (SELECT count(*)::int FROM tasks t WHERE t.board_id = b.id) AS "taskCount",
   (SELECT count(*)::int FROM tasks t WHERE t.board_id = b.id AND NOT t.done) AS "openCount"`;
 
-const TASK = `t.id, t.board_id AS "boardId", t.title, t.done, t.due_date AS "dueDate",
-  t.created_at AS "createdAt", t.updated_at AS "updatedAt",
-  COALESCE(
-    (SELECT json_agg(json_build_object(
-        'id', a.id, 'filename', a.filename, 'contentType', a.content_type,
-        'size', a.size_bytes, 'createdAt', a.created_at) ORDER BY a.id)
-       FROM attachments a WHERE a.task_id = t.id),
-    '[]'::json) AS attachments`;
+const COLUMN = 'id, board_id AS "boardId", name, position, is_done AS "isDone"';
+const LABEL = 'id, board_id AS "boardId", name, color';
+
+export const LABEL_COLORS = ['gray', 'red', 'amber', 'green', 'teal', 'blue', 'violet', 'pink'];
+
+// Every new board starts with three columns and a few labels.
+export async function seedBoard(q, boardId) {
+  await q.query(
+    `INSERT INTO board_columns (board_id, name, position, is_done)
+     VALUES ($1, 'To do', 0, false), ($1, 'In progress', 1, false), ($1, 'Done', 2, true)`,
+    [boardId],
+  );
+  await q.query(
+    `INSERT INTO labels (board_id, name, color)
+     VALUES ($1, 'Bug', 'red'), ($1, 'Feature', 'blue'), ($1, 'Design', 'teal'), ($1, 'Research', 'violet')`,
+    [boardId],
+  );
+}
+
+// Rewrites positions 0..n-1 in the given order.
+export async function setPositions(q, table, orderedIds) {
+  await q.query(
+    `UPDATE ${table} x SET position = o.pos - 1
+       FROM unnest($1::int[]) WITH ORDINALITY AS o (id, pos) WHERE x.id = o.id`,
+    [orderedIds],
+  );
+}
+
+const clamp = (value, max) => Math.max(0, Math.min(value, max));
 
 export function boardsRepo(db) {
   const one = async (text, params) => (await db.query(text, params)).rows[0] ?? null;
   const all = async (text, params) => (await db.query(text, params)).rows;
-  const keysFor = async (where, params) =>
-    (
-      await all(
-        `SELECT a.storage_key AS key FROM attachments a JOIN tasks t ON t.id = a.task_id WHERE ${where}`,
-        params,
-      )
-    ).map((row) => row.key);
-
-  const getTask = (taskId) => one(`SELECT ${TASK} FROM tasks t WHERE t.id = $1`, [taskId]);
 
   return {
     // ------------------------------------------------------------ boards
@@ -36,86 +48,139 @@ export function boardsRepo(db) {
     getBoard: (boardId) => one(`SELECT ${BOARD} FROM boards b WHERE b.id = $1`, [boardId]),
 
     createBoard: (workspaceId, userId, name) =>
-      one(
-        `WITH b AS (INSERT INTO boards (workspace_id, created_by, name) VALUES ($1, $2, $3) RETURNING *)
-         SELECT ${BOARD} FROM b`,
-        [workspaceId, userId, name],
-      ),
+      db.tx(async (q) => {
+        const { rows } = await q.query(
+          'INSERT INTO boards (workspace_id, created_by, name) VALUES ($1, $2, $3) RETURNING id',
+          [workspaceId, userId, name],
+        );
+        await seedBoard(q, rows[0].id);
+        return (await q.query(`SELECT ${BOARD} FROM boards b WHERE b.id = $1`, [rows[0].id])).rows[0];
+      }),
 
     renameBoard: (boardId, name) =>
-      one(
-        `WITH b AS (UPDATE boards SET name = $2 WHERE id = $1 RETURNING *) SELECT ${BOARD} FROM b`,
-        [boardId, name],
-      ),
+      one(`WITH b AS (UPDATE boards SET name = $2 WHERE id = $1 RETURNING *) SELECT ${BOARD} FROM b`, [boardId, name]),
 
     // Returns the storage keys of the board's attachments, so the caller can delete the files.
     async deleteBoard(boardId) {
-      const keys = await keysFor('t.board_id = $1', [boardId]);
+      const keys = (
+        await all(
+          'SELECT a.storage_key AS key FROM attachments a JOIN tasks t ON t.id = a.task_id WHERE t.board_id = $1',
+          [boardId],
+        )
+      ).map((row) => row.key);
       await db.query('DELETE FROM boards WHERE id = $1', [boardId]);
       return keys;
     },
 
-    // ------------------------------------------------------------ tasks
+    // ------------------------------------------------------------ columns
 
-    listTasks: (boardId) =>
-      all(`SELECT ${TASK} FROM tasks t WHERE t.board_id = $1 ORDER BY t.done, t.due_date NULLS LAST, t.id`, [
-        boardId,
-      ]),
+    listColumns: (boardId) => all(`SELECT ${COLUMN} FROM board_columns WHERE board_id = $1 ORDER BY position, id`, [boardId]),
 
-    getTask,
+    getColumn: (columnId) => one(`SELECT ${COLUMN} FROM board_columns WHERE id = $1`, [columnId]),
 
-    async createTask(boardId, userId, { title, dueDate = null }) {
-      const row = await one(
-        'INSERT INTO tasks (board_id, created_by, title, due_date) VALUES ($1, $2, $3, $4) RETURNING id',
-        [boardId, userId, title, dueDate],
-      );
-      return getTask(row.id);
-    },
+    createColumn: (boardId, { name, isDone = false }) =>
+      one(
+        `INSERT INTO board_columns (board_id, name, is_done, position)
+         VALUES ($1, $2, $3, (SELECT COALESCE(max(position) + 1, 0) FROM board_columns WHERE board_id = $1))
+         RETURNING ${COLUMN}`,
+        [boardId, name, isDone],
+      ),
 
-    async updateTask(taskId, { title, done, dueDate }) {
-      const params = [taskId];
-      const sets = ['updated_at = now()'];
-      const param = (value) => `$${params.push(value)}`;
-      if (title !== undefined) sets.push(`title = ${param(title)}`);
-      if (done !== undefined) sets.push(`done = ${param(done)}`);
-      if (dueDate !== undefined) {
-        const p = param(dueDate);
-        // A new due date earns a new reminder.
-        sets.push(
-          `due_date = ${p}::date`,
-          `reminded_at = CASE WHEN due_date IS DISTINCT FROM ${p}::date THEN NULL ELSE reminded_at END`,
+    // Changing whether a column counts as done updates its cards to match.
+    updateColumn: (columnId, { name, isDone }) =>
+      db.tx(async (q) => {
+        const column = (
+          await q.query(
+            `UPDATE board_columns SET name = COALESCE($2, name), is_done = COALESCE($3, is_done)
+              WHERE id = $1 RETURNING ${COLUMN}`,
+            [columnId, name ?? null, isDone ?? null],
+          )
+        ).rows[0];
+        if (isDone !== undefined) {
+          await q.query(
+            `UPDATE tasks SET done = $2,
+                    completed_at = CASE WHEN $2 THEN COALESCE(completed_at, now()) ELSE NULL END
+              WHERE column_id = $1 AND done <> $2`,
+            [columnId, isDone],
+          );
+        }
+        return column;
+      }),
+
+    moveColumn: (columnId, index) =>
+      db.tx(async (q) => {
+        const column = (await q.query('SELECT board_id FROM board_columns WHERE id = $1', [columnId])).rows[0];
+        const ids = (
+          await q.query('SELECT id FROM board_columns WHERE board_id = $1 AND id <> $2 ORDER BY position, id FOR UPDATE', [
+            column.board_id,
+            columnId,
+          ])
+        ).rows.map((r) => r.id);
+        ids.splice(clamp(index, ids.length), 0, columnId);
+        await setPositions(q, 'board_columns', ids);
+      }),
+
+    // Cards move to the end of `moveToId` first. Returns false if this is the board's last column.
+    deleteColumn: (columnId, moveToId) =>
+      db.tx(async (q) => {
+        const column = (await q.query('SELECT board_id FROM board_columns WHERE id = $1 FOR UPDATE', [columnId])).rows[0];
+        const remaining = (
+          await q.query('SELECT id, is_done FROM board_columns WHERE board_id = $1 AND id <> $2 ORDER BY position, id', [
+            column.board_id,
+            columnId,
+          ])
+        ).rows;
+        if (remaining.length === 0) return false;
+        const target = remaining.find((c) => c.id === moveToId) ?? remaining[0];
+        const moving = (await q.query('SELECT id FROM tasks WHERE column_id = $1 ORDER BY position, id', [columnId])).rows;
+        if (moving.length) {
+          const existing = (await q.query('SELECT id FROM tasks WHERE column_id = $1 ORDER BY position, id', [target.id])).rows;
+          await q.query(
+            `UPDATE tasks SET column_id = $2, done = $3,
+                    completed_at = CASE WHEN $3 THEN COALESCE(completed_at, now()) ELSE NULL END
+              WHERE column_id = $1`,
+            [columnId, target.id, target.is_done],
+          );
+          await setPositions(q, 'tasks', [...existing, ...moving].map((r) => r.id));
+        }
+        await q.query('DELETE FROM board_columns WHERE id = $1', [columnId]);
+        await setPositions(q, 'board_columns', remaining.map((c) => c.id));
+        return { movedTo: target.id };
+      }),
+
+    // ------------------------------------------------------------ labels
+
+    listLabels: (boardId) => all(`SELECT ${LABEL} FROM labels WHERE board_id = $1 ORDER BY id`, [boardId]),
+
+    getLabel: (labelId) => one(`SELECT ${LABEL} FROM labels WHERE id = $1`, [labelId]),
+
+    createLabel: (boardId, { name, color }) =>
+      one(
+        `INSERT INTO labels (board_id, name, color) VALUES ($1, $2, $3)
+         ON CONFLICT (board_id, name) DO NOTHING RETURNING ${LABEL}`,
+        [boardId, name, color],
+      ),
+
+    updateLabel: async (labelId, { name, color }) => {
+      try {
+        return await one(
+          `UPDATE labels SET name = COALESCE($2, name), color = COALESCE($3, color) WHERE id = $1 RETURNING ${LABEL}`,
+          [labelId, name ?? null, color ?? null],
         );
+      } catch (err) {
+        if (err.code === '23505') return null;
+        throw err;
       }
-      await db.query(`UPDATE tasks SET ${sets.join(', ')} WHERE id = $1`, params);
-      return getTask(taskId);
     },
 
-    async deleteTask(taskId) {
-      const keys = await keysFor('t.id = $1', [taskId]);
-      await db.query('DELETE FROM tasks WHERE id = $1', [taskId]);
-      return keys;
+    deleteLabel: async (labelId) => {
+      await db.query('DELETE FROM labels WHERE id = $1', [labelId]);
     },
 
-    // ------------------------------------------------------------ attachments
-
-    addAttachment: (taskId, { storageKey, filename, contentType, size }) =>
-      one(
-        `INSERT INTO attachments (task_id, storage_key, filename, content_type, size_bytes)
-         SELECT id, $2, $3, $4, $5 FROM tasks WHERE id = $1
-         RETURNING id, filename, content_type AS "contentType", size_bytes AS size, created_at AS "createdAt"`,
-        [taskId, storageKey, filename, contentType, size],
-      ),
-
-    getAttachment: (attachmentId) =>
-      one(
-        `SELECT id, storage_key AS "storageKey", filename, content_type AS "contentType", size_bytes AS size
-           FROM attachments WHERE id = $1`,
-        [attachmentId],
-      ),
-
-    async deleteAttachment(attachmentId) {
-      const row = await one('DELETE FROM attachments WHERE id = $1 RETURNING storage_key AS key', [attachmentId]);
-      return row?.key ?? null;
-    },
+    // Ids from `ids` that are labels on this board.
+    validLabelIds: async (boardId, ids) =>
+      ids.length
+        ? (await all('SELECT id FROM labels WHERE board_id = $1 AND id = ANY($2::int[])', [boardId, ids])).map((r) => r.id)
+        : [],
   };
 }
