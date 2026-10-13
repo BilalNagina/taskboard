@@ -7,6 +7,7 @@ import request from 'supertest';
 import { createRepo } from '../src/data/index.js';
 import { createDb } from '../src/db.js';
 import { createApp } from '../src/http/app.js';
+import { createLivePublisher } from '../src/live.js';
 import { migrate } from '../src/migrate.js';
 import { createRedis } from '../src/redis.js';
 import { createRateLimiter, createSessionStore } from '../src/sessions.js';
@@ -38,9 +39,12 @@ export async function setupApi() {
   const repo = createRepo(db);
   const storage = memoryStorage();
   const jobs = { added: [], add: async (name, data, opts) => jobs.added.push({ name, data, opts }) };
+  const sessions = createSessionStore(redis);
+  const live = createLivePublisher(redis);
   const app = createApp({
     repo,
-    sessions: createSessionStore(redis),
+    sessions,
+    live,
     limiter: createRateLimiter(redis),
     storage,
     jobs,
@@ -60,7 +64,8 @@ export async function setupApi() {
     const [sample] = (await agent.get(`/api/workspaces/${workspace.id}/boards`)).body;
     assert.equal((await agent.delete(`/api/boards/${sample.id}`)).status, 204);
     const board = (await agent.post(`/api/workspaces/${workspace.id}/boards`).send({ name: 'My tasks' })).body;
-    return { agent, email, user: res.body.user, workspace, board };
+    const cookie = res.headers['set-cookie'][0].split(';')[0];
+    return { agent, email, cookie, user: res.body.user, workspace, board };
   }
 
   const addMember = (workspaceId, userId, role) =>
@@ -71,5 +76,5 @@ export async function setupApi() {
     await redis.quit();
   };
 
-  return { db, redis, repo, storage, jobs, app, signUp, addMember, close };
+  return { db, redis, repo, sessions, live, storage, jobs, app, signUp, addMember, close };
 }

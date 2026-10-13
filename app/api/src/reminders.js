@@ -23,14 +23,14 @@ export async function scanDueTasks({ repo, queue }) {
 
 // At-least-once: if the process dies after sending but before recording it, the retry
 // sends a second email. That beats the alternative of losing the reminder.
-export async function sendReminder({ repo, mailer, appUrl }, { taskId, dueDate }, today = todayUtc()) {
+export async function sendReminder({ repo, mailer, appUrl, live }, { taskId, dueDate }, today = todayUtc()) {
   const task = await repo.reminderDetails(taskId, dueDate);
   if (!task) return { sent: false };
   const when = describeDue(task.dueDate, today);
   const link = `${appUrl}/app/boards/${task.boardId}?task=${task.id}`;
   // The bell notification goes to everyone (unless they turned "due" off); the email only
   // to people who keep email reminders on.
-  await repo.notify({
+  const notified = await repo.notify({
     userIds: task.recipients.map((p) => p.id),
     type: 'due',
     workspaceId: task.workspaceId,
@@ -38,6 +38,7 @@ export async function sendReminder({ repo, mailer, appUrl }, { taskId, dueDate }
     taskId: task.id,
     data: { dueDate: task.dueDate, when },
   });
+  if (notified?.length) await live?.publish({ kind: 'notification', userIds: notified });
   const emailed = task.recipients.filter((p) => p.emailReminders);
   for (const person of emailed) {
     await mailer.send(buildReminderEmail({ ...task, email: person.email, userName: person.name }, link, when));

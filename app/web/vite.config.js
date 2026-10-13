@@ -5,6 +5,6 @@ export default defineConfig({
   plugins: [react()],
   server: {
     // In development, forward API calls to the Express server.
-    proxy: { '/api': 'http://localhost:3000' },
+    proxy: { '/api': { target: 'http://localhost:3000', ws: true } },
   },
 });

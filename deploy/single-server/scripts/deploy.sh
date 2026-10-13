@@ -23,6 +23,15 @@ set_tag "$NEW_TAG"
 docker compose pull api web worker
 docker compose up -d --remove-orphans
 
+# The proxy renders its config only when it starts, and new config files alone don't make
+# compose recreate it, so restart it when they changed (a second's blip, only then).
+NGINX_SUM="$(cat nginx/* | sha256sum | cut -d' ' -f1)"
+if [ "$NGINX_SUM" != "$(cat .nginx.sum 2>/dev/null || true)" ]; then
+  echo "==> nginx config changed, restarting the proxy"
+  docker compose up -d --force-recreate proxy
+  echo "$NGINX_SUM" > .nginx.sum
+fi
+
 if ./scripts/healthcheck.sh; then
   # Clean up images unused for a week; recent ones stay for quick rollbacks.
   docker image prune -af --filter "until=168h" >/dev/null

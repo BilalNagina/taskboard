@@ -12,7 +12,7 @@ import { workspacesRepo } from './workspaces.js';
 
 export { LABEL_COLORS } from './boards.js';
 export { toPrefixQuery } from './insights.js';
-export { NOTIFICATION_TYPES } from './notifications.js';
+export { EMAIL_PREFS, emailTypesFor, NOTIFICATION_TYPES } from './notifications.js';
 export { ROLES, roleAtLeast } from './workspaces.js';
 
 export function createRepo(db) {

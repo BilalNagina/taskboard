@@ -4,7 +4,8 @@ import request from 'supertest';
 import { roleAtLeast, toPrefixQuery } from '../src/data/index.js';
 import { boardCsv, csvCell, pdfSafe, timesheetCsv } from '../src/exporters.js';
 import { imageType } from '../src/http/routes/attachments.js';
-import { buildInviteEmail, buildPasswordResetEmail, buildReminderEmail } from '../src/emails.js';
+import { buildInviteEmail, buildNotificationEmail, buildPasswordResetEmail, buildReminderEmail } from '../src/emails.js';
+import { emailTypesFor } from '../src/data/notifications.js';
 import { createApp } from '../src/http/app.js';
 import { HttpError } from '../src/http/errors.js';
 import { parseContentType, parseFilename, parseId, schemas, validate } from '../src/http/validation.js';
@@ -314,4 +315,30 @@ test('timesheet CSV has hours and is safe for spreadsheets', () => {
   const lines = csv.slice(1).split(String.fromCharCode(13, 10));
   assert.equal(lines[0], 'Date,Person,Board,Task,Minutes,Hours,Note');
   assert.equal(lines[1], `2026-10-14,Ada,Launch,'=SUM(A1),90,1.50,"Call, then notes"`);
+});
+
+// ---------------------------------------------------------------- notification emails
+
+test('notification emails follow the email switches, which default to on', () => {
+  assert.deepEqual(emailTypesFor({}), ['assigned', 'mentioned', 'comment']);
+  assert.deepEqual(emailTypesFor({ emailComment: false, comment: true }), ['assigned', 'mentioned']);
+  assert.deepEqual(emailTypesFor({ emailAssigned: false, emailMentioned: false, emailComment: false }), []);
+  assert.deepEqual(validate(schemas.profile, { notificationPrefs: { emailMentioned: false } }), { notificationPrefs: { emailMentioned: false } });
+});
+
+test('notification email: subject for one or several, links, and escaped content', () => {
+  const user = { name: 'Ada', email: 'ada@example.com' };
+  const base = { boardId: 3, taskId: 9, boardName: 'Launch', actor: { name: '<Bo>' }, data: {} };
+  const one = buildNotificationEmail(user, [{ ...base, type: 'mentioned', taskTitle: 'Fix <b>it</b>', data: { excerpt: '@Ada look <here>' } }], 'https://app.example.com');
+  assert.equal(one.to, 'ada@example.com');
+  assert.equal(one.subject, '<Bo> mentioned you on “Fix <b>it</b>”', 'subjects are plain text');
+  assert.match(one.text, /https:\/\/app\.example\.com\/app\/boards\/3\?task=9/);
+  assert.ok(one.html.includes('&lt;Bo&gt; mentioned you on “Fix &lt;b&gt;it&lt;/b&gt;”'));
+  assert.ok(one.html.includes('@Ada look &lt;here&gt;'));
+  assert.ok(!one.html.includes('<b>it</b>'));
+  assert.match(one.text, /notification settings/);
+  const many = buildNotificationEmail(user, [{ ...base, type: 'assigned', taskTitle: 'A' }, { ...base, type: 'comment', taskTitle: 'B' }], 'https://app.example.com');
+  assert.equal(many.subject, '2 updates in Tasklane');
+  assert.match(many.text, /<Bo> assigned you “A” \(Launch\)/);
+  assert.match(many.text, /<Bo> commented on “B”/);
 });

@@ -8,8 +8,10 @@ import { config } from './config.js';
 import { createRepo } from './data/index.js';
 import { createDb, waitForDb } from './db.js';
 import { createJobHandlers, resetLink } from './jobs.js';
+import { createLivePublisher } from './live.js';
 import { createMailer } from './mailer.js';
 import { createQueue, QUEUE_NAME, queueConnection } from './queue.js';
+import { createRedis } from './redis.js';
 
 const logger = pino({ level: config.logLevel });
 const db = createDb(config.databaseUrl);
@@ -21,7 +23,9 @@ const queue = createQueue(config.redisUrl);
 // Idempotent: every worker replica upserts the same schedule, and only one scan runs.
 await queue.upsertJobScheduler('scan-due-tasks', { every: config.reminderScanMs }, { name: 'scan' });
 
-const handlers = createJobHandlers({ repo, mailer, queue, appUrl: config.appUrl });
+// Due-date notifications made here appear in browsers straight away, via the API.
+const redis = createRedis(config.redisUrl, logger);
+const handlers = createJobHandlers({ repo, mailer, queue, appUrl: config.appUrl, live: createLivePublisher(redis, logger) });
 
 const registry = new client.Registry();
 client.collectDefaultMetrics({ register: registry });
@@ -84,7 +88,7 @@ async function shutdown(signal) {
   setTimeout(() => process.exit(1), 20_000).unref();
   health.close();
   await worker.close();
-  await Promise.allSettled([queue.close(), db.close(), mailer.close()]);
+  await Promise.allSettled([queue.close(), db.close(), mailer.close(), redis.quit()]);
   process.exit(0);
 }
 process.on('SIGTERM', shutdown);
