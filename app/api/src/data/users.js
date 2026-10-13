@@ -1,6 +1,11 @@
 import { seedBoard } from './boards.js';
 
-export const USER = 'u.id, u.email, u.name, u.theme, u.created_at AS "createdAt"';
+// The avatar URL carries a version so browsers fetch the new image after a change.
+export const avatarUrl = (a) =>
+  `CASE WHEN ${a}.avatar_key IS NOT NULL THEN '/api/avatars/' || ${a}.id || '?v=' || floor(extract(epoch FROM ${a}.avatar_updated_at))::bigint END`;
+
+export const USER = `u.id, u.email, u.name, u.theme, u.created_at AS "createdAt", ${avatarUrl('u')} AS "avatarUrl",
+  u.notification_prefs AS "notificationPrefs"`;
 const UNIQUE_VIOLATION = '23505';
 
 export function usersRepo(db) {
@@ -52,11 +57,38 @@ export function usersRepo(db) {
     getPasswordHash: async (id) =>
       (await one('SELECT password_hash AS "passwordHash" FROM users WHERE id = $1', [id]))?.passwordHash ?? null,
 
-    updateProfile: (id, { name, theme }) =>
+    // Notification preferences are merged into the saved ones, so the client can send
+    // just the switch that changed.
+    updateProfile: (id, { name, theme, notificationPrefs }) =>
       one(
-        `UPDATE users u SET name = COALESCE($2, name), theme = COALESCE($3, theme)
+        `UPDATE users u SET name = COALESCE($2, name), theme = COALESCE($3, theme),
+                notification_prefs = notification_prefs || COALESCE($4::jsonb, '{}')
           WHERE id = $1 RETURNING ${USER}`,
-        [id, name ?? null, theme ?? null],
+        [id, name ?? null, theme ?? null, notificationPrefs ? JSON.stringify(notificationPrefs) : null],
+      ),
+
+    // Returns the previous avatar's storage key so the caller can delete the old file.
+    setAvatar: async (id, key) =>
+      (
+        await one(
+          `UPDATE users u SET avatar_key = $2, avatar_updated_at = CASE WHEN $2::text IS NULL THEN NULL ELSE now() END
+             FROM (SELECT avatar_key AS old FROM users WHERE id = $1) prev
+            WHERE u.id = $1 RETURNING prev.old`,
+          [id, key],
+        )
+      )?.old ?? null,
+
+    getAvatarKey: async (id) => (await one('SELECT avatar_key AS key FROM users WHERE id = $1', [id]))?.key ?? null,
+
+    // Avatars are visible to people who share a workspace with the user (and to themselves).
+    sharesWorkspace: async (userId, otherId) =>
+      userId === otherId ||
+      Boolean(
+        await one(
+          `SELECT 1 FROM workspace_members a JOIN workspace_members b ON b.workspace_id = a.workspace_id
+            WHERE a.user_id = $1 AND b.user_id = $2 LIMIT 1`,
+          [userId, otherId],
+        ),
       ),
 
     setPassword: async (id, passwordHash) => {

@@ -18,7 +18,7 @@ export function createS3Storage({ bucket, region, endpoint, accessKeyId, secretA
     },
     async get(key) {
       const object = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
-      return { body: object.Body, size: object.ContentLength };
+      return { body: object.Body, size: object.ContentLength, contentType: object.ContentType };
     },
     async remove(keys) {
       if (keys.length === 0) return;

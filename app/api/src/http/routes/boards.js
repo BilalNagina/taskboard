@@ -1,4 +1,5 @@
 import express from 'express';
+import { boardCsv, writeBoardPdf } from '../../exporters.js';
 import { HttpError } from '../errors.js';
 import { parseId, schemas, validate } from '../validation.js';
 
@@ -51,6 +52,25 @@ export function boardRoutes({ repo, access, session, removeFiles, log }) {
     await access.board(req, id);
     const before = req.query.before ? parseId(req.query.before, 'activity') : null;
     res.json(await repo.boardActivity(id, { before }));
+  });
+
+  // ------------------------------------------------------------ export
+
+  const fileName = (name, ext) => `${name.replace(/[^\p{L}\p{N} _-]+/gu, '').trim().replace(/\s+/g, '-') || 'board'}.${ext}`;
+
+  router.get('/boards/:id/export.csv', async (req, res) => {
+    const id = parseId(req.params.id, 'board');
+    await access.board(req, id);
+    const [board, rows] = await Promise.all([repo.getBoard(id), repo.exportBoard(id)]);
+    res.attachment(fileName(board.name, 'csv')).type('text/csv; charset=utf-8').send(boardCsv(rows));
+  });
+
+  router.get('/boards/:id/export.pdf', async (req, res) => {
+    const id = parseId(req.params.id, 'board');
+    const { workspaceId } = await access.board(req, id);
+    const [board, rows, workspace] = await Promise.all([repo.getBoard(id), repo.exportBoard(id), repo.getWorkspace(workspaceId)]);
+    res.attachment(fileName(board.name, 'pdf')).type('application/pdf');
+    writeBoardPdf(res, { board, workspaceName: workspace.name, rows, generatedBy: req.user.name });
   });
 
   // ------------------------------------------------------------ columns

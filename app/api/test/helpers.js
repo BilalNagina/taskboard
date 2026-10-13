@@ -24,7 +24,7 @@ export function memoryStorage() {
     get: async (key) => {
       const file = files.get(key);
       if (!file) throw Object.assign(new Error('missing'), { name: 'NoSuchKey' });
-      return { body: Readable.from([file.body]), size: file.body.length };
+      return { body: Readable.from([file.body]), size: file.body.length, contentType: file.contentType };
     },
     remove: async (keys) => keys.forEach((key) => files.delete(key)),
   };

@@ -1,8 +1,10 @@
 // The activity log: one row per thing that happened, with who did it. Boards and tasks
 // show their slice of it; notifications (later) are built from the same events.
 
+import { avatarUrl } from './users.js';
+
 const ENTRY = `a.id, a.type, a.data, a.created_at AS "createdAt", a.board_id AS "boardId", a.task_id AS "taskId",
-  json_build_object('id', u.id, 'name', COALESCE(u.name, 'Someone'), 'email', u.email) AS actor,
+  json_build_object('id', u.id, 'name', COALESCE(u.name, 'Someone'), 'email', u.email, 'avatarUrl', ${avatarUrl('u')}) AS actor,
   t.title AS "taskTitle"`;
 
 export function activityRepo(db) {
