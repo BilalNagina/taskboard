@@ -31,7 +31,8 @@ export function memoryStorage() {
   };
 }
 
-export async function setupApi() {
+// `billing` stands in for the payment provider (billing is off without it).
+export async function setupApi({ billing = null } = {}) {
   const db = createDb(DATABASE_URL);
   const redis = createRedis(REDIS_URL);
   await migrate(db.pool);
@@ -50,6 +51,7 @@ export async function setupApi() {
     jobs,
     appUrl: 'https://app.example.com',
     ping: () => Promise.all([db.ping(), redis.ping()]),
+    billing,
   });
 
   // Registers a fresh user; returns a cookie-carrying agent, their workspace and an empty

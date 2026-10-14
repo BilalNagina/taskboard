@@ -8,6 +8,7 @@ import { createLimits } from './limits.js';
 import { HttpError } from './errors.js';
 import { attachmentRoutes } from './routes/attachments.js';
 import { adminRoutes } from './routes/admin.js';
+import { billingRoutes, billingWebhookRoute } from './routes/billing.js';
 import { accountRoutes, authRoutes } from './routes/auth.js';
 import { boardRoutes } from './routes/boards.js';
 import { insightRoutes, notificationRoutes } from './routes/insights.js';
@@ -21,7 +22,7 @@ const QUIET_PATHS = new Set(['/healthz', '/readyz', '/metrics']);
 const CHANGES = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
 const noLive = { publish: async () => {} };
 
-export function createApp({ repo, sessions, limiter, storage, jobs, ping, logger, cookieSecure = false, appUrl = '', live = noLive }) {
+export function createApp({ repo, sessions, limiter, storage, jobs, ping, logger, cookieSecure = false, appUrl = '', live = noLive, billing = null }) {
   const app = express();
   app.disable('x-powered-by');
   // Requests arrive through the NGINX proxy on the private Docker network; trust its
@@ -119,9 +120,11 @@ export function createApp({ repo, sessions, limiter, storage, jobs, ping, logger
   }
 
   const session = createSessionHelpers({ sessions, repo, cookieSecure });
-  const deps = { repo, sessions, limiter, storage, jobs, session, removeFiles, log, notify, appUrl, access: createAccess(repo), limits: createLimits(repo) };
+  const deps = { repo, sessions, limiter, storage, jobs, session, removeFiles, log, notify, appUrl, billing, live, access: createAccess(repo), limits: createLimits(repo) };
 
-  // Raw-body uploads first, before the JSON parser.
+  // Raw-body routes first, before the JSON parser: the billing webhook (its signature
+  // covers the exact bytes) and uploads.
+  app.use('/api', billingWebhookRoute(deps));
   app.use('/api', attachmentRoutes(deps));
   app.use(express.json({ limit: '16kb' }));
   app.use('/api/auth', authRoutes(deps));
@@ -133,6 +136,7 @@ export function createApp({ repo, sessions, limiter, storage, jobs, ping, logger
   app.use('/api', notificationRoutes(deps));
   app.use('/api', timeRoutes(deps));
   app.use('/api', adminRoutes(deps));
+  app.use('/api', billingRoutes(deps));
   app.use('/api/workspaces', workspaceRoutes(deps));
   app.use('/api', boardRoutes(deps));
   app.use('/api', taskRoutes(deps));

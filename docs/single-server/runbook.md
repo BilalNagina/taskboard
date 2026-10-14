@@ -95,6 +95,23 @@ From now on, a backup runs every night at 02:30 UTC (`/var/log/taskboard-backup.
 | Restore a backup | `/opt/taskboard/scripts/restore.sh latest` or `restore.sh taskboard-<timestamp>.sql.gz` |
 | Check certificate renewal | `sudo certbot renew --dry-run` |
 | Uptime alerts | A failed **Uptime check** run emails the repository owner |
+| Billing webhooks | `docker compose logs api` and look for `billing webhook`: each event logs its type and whether it was applied. Paddle shows every delivery under **Developer tools > Notifications**, and can replay one. |
+
+### Turn on paid plans (Paddle)
+
+Billing is off until `PADDLE_API_KEY` is set; owners then switch plans for free. To turn it on (sandbox shown; use a live account and live keys for real money):
+
+1. In the Paddle dashboard, create the **Tasklane Pro** and **Tasklane Team** products, each with a monthly and a yearly per-seat price. Give each price the custom data `{"plan": "pro", "interval": "month"}` (with its own plan and interval): that's how the app finds them, so no price ids go in config.
+2. **Checkout > Checkout settings**: set the default payment link to `https://<DOMAIN>/`.
+3. **Developer tools > Notifications**: add a webhook destination `https://<DOMAIN>/api/billing/webhook` with the `subscription.*` events. Copy its secret key.
+4. **Developer tools > Authentication**: create an API key and a client-side token.
+5. Add `PADDLE_API_KEY`, `PADDLE_WEBHOOK_SECRET` and `PADDLE_CLIENT_TOKEN` to `/opt/taskboard/.env` (see `.env.example`), then run `docker compose up -d api`.
+
+Test with card `4242 4242 4242 4242`, any future expiry date and security code `100`.
+
+### Rotate the Paddle keys
+
+Create a new API key (or roll the webhook destination's secret) in Paddle, update `.env`, run `docker compose up -d api`, then revoke the old key. Paddle retries any webhooks that fail in the meantime.
 
 ### Rotate the database password
 

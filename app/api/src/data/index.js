@@ -1,5 +1,6 @@
 import { activityRepo } from './activity.js';
 import { adminRepo } from './admin.js';
+import { billingRepo } from './billing.js';
 import { boardsRepo } from './boards.js';
 import { insightsRepo } from './insights.js';
 import { membersRepo } from './members.js';
@@ -10,6 +11,7 @@ import { timeRepo } from './time.js';
 import { usersRepo } from './users.js';
 import { workspacesRepo } from './workspaces.js';
 
+export { LIVE_STATUSES } from './billing.js';
 export { LABEL_COLORS } from './boards.js';
 export { toPrefixQuery } from './insights.js';
 export { EMAIL_PREFS, emailTypesFor, NOTIFICATION_TYPES } from './notifications.js';
@@ -28,5 +30,6 @@ export function createRepo(db) {
     ...remindersRepo(db),
     ...timeRepo(db),
     ...adminRepo(db),
+    ...billingRepo(db),
   };
 }

@@ -1,5 +1,5 @@
-// Workspace admin (owners): usage against the plan, switching plans, members at a glance,
-// the audit log, and deleting the workspace.
+// Workspace admin (owners): usage against the plan, plan and billing (or free switching
+// while billing is off), members at a glance, the audit log, and deleting the workspace.
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router';
@@ -8,8 +8,9 @@ import { useToast } from '../../components/Toaster.jsx';
 import { Avatar, ConfirmDialog, Dialog, EmptyState, Field, PromptDialog } from '../../components/ui.jsx';
 import { api } from '../../lib/api.js';
 import { formatDate, formatMinutes, formatSize, timeAgo } from '../../lib/format.js';
-import { keys, useAdmin, useAuditLog, useMe, useWorkspaces } from '../../lib/queries.js';
+import { keys, useAdmin, useAuditLog, useBilling, useMe, useWorkspaces } from '../../lib/queries.js';
 import { ActivityList } from './board/Activity.jsx';
+import Billing, { PlanFeatures } from './Billing.jsx';
 import { useCurrentWorkspace } from './AppLayout.jsx';
 
 const MB = 1024 ** 2;
@@ -26,6 +27,9 @@ export default function Admin() {
   const listed = workspaces.find((w) => w.id === workspaceId);
   const isOwner = listed?.role === 'owner';
   const { data, isPending, error } = useAdmin(workspaceId, isOwner);
+  // True from a completed checkout until the provider's webhook has switched the plan.
+  const [waiting, setWaiting] = useState(false);
+  const billingQuery = useBilling(workspaceId, { enabled: isOwner, waiting });
   const [dialog, setDialog] = useState(null);
   const client = useQueryClient();
   const navigate = useNavigate();
@@ -121,41 +125,47 @@ export default function Admin() {
       </section>
 
       <section className="admin-section">
-        <h2 className="section-title">Plan</h2>
-        <p className="muted small section-hint">
-          Payments aren&apos;t enabled in this demo, so switching plans is free. Moving to a smaller plan keeps everything you have; it only stops new
-          boards, people or files beyond its limits.
-        </p>
-        <div className="plan-grid">
-          {plans.map((plan) => {
-            const current = plan.key === workspace.plan;
-            return (
-              <article key={plan.key} className={`card plan-card ${current ? 'is-current' : ''}`}>
-                <header>
-                  <h3>{plan.name}</h3>
-                  {current && <span className="badge badge-accent">Current plan</span>}
-                </header>
-                <ul>
-                  <li><Icon name="users" size={15} /> {plan.members === null ? 'Unlimited members' : `Up to ${plan.members} members`}</li>
-                  <li><Icon name="board" size={15} /> {plan.boards === null ? 'Unlimited boards' : `${plan.boards} boards`}</li>
-                  <li><Icon name="clip" size={15} /> {limitSize(plan.storageBytes)} of files</li>
-                </ul>
-                {!current && (
-                  <button
-                    className="btn btn-secondary btn-sm btn-block"
-                    onClick={() => {
-                      const over = overLimits(plan);
-                      if (over.length) setDialog({ type: 'downgrade', plan, over });
-                      else switchPlan(plan);
-                    }}
-                  >
-                    Switch to {plan.name}
-                  </button>
-                )}
-              </article>
-            );
-          })}
-        </div>
+        <h2 className="section-title">{billingQuery.data?.enabled ? 'Plan and billing' : 'Plan'}</h2>
+        {billingQuery.error ? (
+          <p className="alert alert-error">{billingQuery.error.message}</p>
+        ) : !billingQuery.data ? (
+          <span className="spinner" />
+        ) : billingQuery.data.enabled ? (
+          <Billing workspaceId={workspaceId} billing={billingQuery.data} waiting={waiting} onWaitingChange={setWaiting} />
+        ) : (
+          <>
+            <p className="muted small section-hint">
+              Payments aren&apos;t enabled here, so switching plans is free. Moving to a smaller plan keeps everything you have; it only stops new
+              boards, people or files beyond its limits.
+            </p>
+            <div className="plan-grid">
+              {plans.map((plan) => {
+                const current = plan.key === workspace.plan;
+                return (
+                  <article key={plan.key} className={`card plan-card ${current ? 'is-current' : ''}`}>
+                    <header>
+                      <h3>{plan.name}</h3>
+                      {current && <span className="badge badge-accent">Current plan</span>}
+                    </header>
+                    <PlanFeatures plan={plan} />
+                    {!current && (
+                      <button
+                        className="btn btn-secondary btn-sm btn-block"
+                        onClick={() => {
+                          const over = overLimits(plan);
+                          if (over.length) setDialog({ type: 'downgrade', plan, over });
+                          else switchPlan(plan);
+                        }}
+                      >
+                        Switch to {plan.name}
+                      </button>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          </>
+        )}
       </section>
 
       <section className="admin-section">

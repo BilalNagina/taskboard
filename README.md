@@ -14,6 +14,7 @@ A public landing page; accounts with password reset; team workspaces with email 
 
 - **web:** React (Vite), served as static files by unprivileged NGINX
 - **api:** Express. Accounts with scrypt-hashed passwords and Redis-backed sessions (HttpOnly, SameSite cookies), per-user boards and tasks, file attachments streamed to a private S3 bucket, rate-limited login. `/healthz` (liveness), `/readyz` (checks PostgreSQL and Redis), `/metrics` (Prometheus), structured JSON logs, graceful shutdown
+- **Paid plans:** Paddle as merchant of record, in sandbox. Owners start a 7-day trial in Paddle Checkout (an overlay; card details never reach the app), pay per seat, change seats or plan with a prorated price preview, and manage invoices, card and cancelling in Paddle's portal. Signed webhooks keep a copy of each subscription and move the workspace's plan; seat and plan limits follow it. The provider sits behind one small interface, so it could be swapped
 - **worker:** same image, different command. A BullMQ job queue on Redis scans for tasks due soon and sends reminder emails over SMTP (Amazon SES in production), with retries and de-duplication
 - **Migrations** run at startup under a PostgreSQL advisory lock, so replicas starting together can't race on a fresh database
 - **Tests:** unit tests, plus integration tests in CI against real PostgreSQL and Redis covering sign-up, sessions, rate limiting, per-user isolation, attachments and the reminder queue

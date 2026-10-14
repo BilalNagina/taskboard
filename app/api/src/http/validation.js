@@ -142,6 +142,13 @@ export const schemas = {
   }),
   timesheet: range(62).and(z.object({ userId: z.coerce.number().int().positive('userId must be an id').optional() })),
   plan: z.object({ plan: z.enum(PLAN_KEYS, `plan must be one of ${PLAN_KEYS.join(', ')}`) }),
+  // Paid plans only: Free has nothing to buy.
+  subscriptionChoice: z.object({
+    plan: z.enum(['pro', 'team'], 'plan must be pro or team'),
+    interval: z.enum(['month', 'year'], 'interval must be month or year'),
+    seats: z.number('seats must be a number').int('seats must be whole').min(1, 'seats must be at least 1').max(1000, 'seats must be at most 1000'),
+    preview: z.boolean('preview must be true or false').optional(),
+  }),
   inviteToken: z.object({ token: z.string('token is required').min(20, 'this invite link is invalid').max(200, 'this invite link is invalid') }),
 };
 
