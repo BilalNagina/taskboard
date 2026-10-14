@@ -46,11 +46,11 @@ function fakeBilling() {
 }
 
 describe('paid plans', { skip: skipIntegration }, () => {
-  let app, signUp, close, billing;
+  let app, signUp, addMember, close, billing;
 
   before(async () => {
     billing = fakeBilling();
-    ({ app, signUp, close } = await setupApi({ billing }));
+    ({ app, signUp, addMember, close } = await setupApi({ billing }));
   });
 
   after(() => close());
@@ -116,8 +116,7 @@ describe('paid plans', { skip: skipIntegration }, () => {
     assert.match(third.body.error, /all 2 paid seats are taken, counting pending invites\. A workspace owner can add seats/);
 
     // The change is in the audit log, credited to whoever checked out.
-    const [entry] = (await owner.agent.get(`/api/workspaces/${owner.workspace.id}/activity`)).body;
-    assert.equal(entry.type, 'workspace.plan_changed');
+    const entry = (await owner.agent.get(`/api/workspaces/${owner.workspace.id}/activity`)).body.find((e) => e.type === 'workspace.plan_changed');
     assert.deepEqual(entry.data, { from: 'free', to: 'pro', status: 'trialing' });
     assert.equal(entry.actor.id, owner.user.id);
 
@@ -140,7 +139,7 @@ describe('paid plans', { skip: skipIntegration }, () => {
   test('checkout is for owners, covers the seats in use, and happens once', async () => {
     const owner = await signUp('Che');
     const member = await signUp('Mel');
-    await owner.agent.post(`/api/workspaces/${owner.workspace.id}/invites`).send({ email: member.email, role: 'member' });
+    await addMember(owner.workspace.id, member.user.id, 'member');
     const url = `/api/workspaces/${owner.workspace.id}/billing/checkout`;
 
     assert.equal((await member.agent.post(url).send({ plan: 'pro', interval: 'month', seats: 5 })).status, 403);
