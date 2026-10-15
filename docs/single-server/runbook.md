@@ -95,6 +95,7 @@ From now on, a backup runs every night at 02:30 UTC (`/var/log/taskboard-backup.
 | Restore a backup | `/opt/taskboard/scripts/restore.sh latest` or `restore.sh taskboard-<timestamp>.sql.gz` |
 | Check certificate renewal | `sudo certbot renew --dry-run` |
 | Uptime alerts | A failed **Uptime check** run emails the repository owner |
+| Backup alerts | The **Backup check** workflow runs daily at 06:00 UTC and fails (emailing the repository owner) if the last successful upload is more than 26 hours old. Look in `/var/log/taskboard-backup.log` for the reason. |
 | Billing webhooks | `docker compose logs api` and look for `billing webhook`: each event logs its type and whether it was applied. Paddle shows every delivery under **Developer tools > Notifications**, and can replay one. |
 
 ### Turn on paid plans (Paddle)
@@ -150,7 +151,7 @@ docker compose up -d api
 ## Teardown
 
 1. Take the portfolio screenshots first (see the checklist in `docs/single-server/README.md`).
-2. Clear the `DOMAIN` repository variable. This pauses the uptime check.
+2. Clear the `DOMAIN` repository variable. This pauses the uptime and backup checks.
 3. `cd deploy/single-server/terraform && terraform destroy`. This removes the server, static IP, both buckets (including backups and attachments), the SES identities, both IAM users and the budget.
 4. Delete the DNS A record and the three DKIM CNAME records.
 5. Optional: delete the `taskboard-api` and `taskboard-web` packages under your GitHub profile → Packages.

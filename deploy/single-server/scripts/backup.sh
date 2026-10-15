@@ -17,5 +17,8 @@ gzip -t "$BACKUP_DIR/$NAME"
 
 aws_cli s3 cp "/backups/$NAME" "s3://$BACKUP_BUCKET/postgres/$NAME" --only-show-errors
 find "$BACKUP_DIR" -name 'taskboard-*.sql.gz' -mtime +7 -delete
+# Written only after the upload succeeds. The Backup check workflow alerts when it gets old.
+printf '%s
+' "$NAME" > "$BACKUP_DIR/last-success"
 
 echo "$(date -u +%FT%TZ) backup ok: $NAME ($(du -h "$BACKUP_DIR/$NAME" | cut -f1))"
