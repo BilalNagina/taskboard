@@ -33,6 +33,7 @@ export const keys = {
   timer: ['timer'],
   timesheet: (workspaceId, params) => ['timesheet', workspaceId, params],
   admin: (workspaceId) => ['admin', workspaceId],
+  billing: (workspaceId) => ['billing', workspaceId],
   auditLog: (workspaceId) => ['auditLog', workspaceId],
 };
 
@@ -127,6 +128,16 @@ export const useTimesheet = (workspaceId, params) =>
 
 export const useAdmin = (workspaceId, enabled = true) =>
   useQuery({ queryKey: keys.admin(workspaceId), queryFn: () => api.admin(workspaceId), enabled: Boolean(workspaceId) && enabled });
+
+// Plans on sale and the workspace's subscription. Polls every 2 seconds while `waiting`
+// (after checkout, until the payment provider's webhook has moved the plan).
+export const useBilling = (workspaceId, { enabled = true, waiting = false } = {}) =>
+  useQuery({
+    queryKey: keys.billing(workspaceId),
+    queryFn: () => api.billing(workspaceId),
+    enabled: Boolean(workspaceId) && enabled,
+    refetchInterval: waiting ? 2000 : false,
+  });
 
 // The workspace audit log, 50 entries a page.
 export const useAuditLog = (workspaceId, enabled = true) =>

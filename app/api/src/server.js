@@ -1,4 +1,5 @@
 import pino from 'pino';
+import { createBilling } from './billing/index.js';
 import { config } from './config.js';
 import { createRepo } from './data/index.js';
 import { createDb, waitForDb } from './db.js';
@@ -31,6 +32,7 @@ const app = createApp({
   cookieSecure: config.cookieSecure,
   appUrl: config.appUrl,
   live: createLivePublisher(redis, logger),
+  billing: createBilling(config.paddle, logger),
 });
 const server = app.listen(config.port, () => logger.info({ port: config.port }, 'api listening'));
 // WebSockets share the HTTP port; a separate Redis connection listens for live events.

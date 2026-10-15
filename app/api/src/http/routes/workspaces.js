@@ -37,6 +37,8 @@ export function workspaceRoutes({ repo, access, limits, session, removeFiles, lo
     if ((await repo.membershipCount(req.user.id)) <= 1) {
       throw new HttpError(409, "you can't delete your only workspace; create another one first");
     }
+    // Deleting would leave the subscription billing for nothing.
+    if (await repo.liveSubscription(id)) throw new HttpError(409, 'cancel this workspace’s subscription in Billing first');
     await removeFiles(req, await repo.deleteWorkspace(id));
     res.status(204).end();
   });

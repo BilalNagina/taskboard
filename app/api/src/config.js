@@ -36,5 +36,14 @@ export const config = {
     pass: env.SMTP_PASS || undefined,
   },
 
+  // Paid plans through Paddle. Without PADDLE_API_KEY billing is off and owners switch
+  // plans for free. Sandbox unless PADDLE_ENV=production.
+  paddle: {
+    apiKey: env.PADDLE_API_KEY || undefined,
+    webhookSecret: env.PADDLE_WEBHOOK_SECRET || undefined,
+    clientToken: env.PADDLE_CLIENT_TOKEN || undefined,
+    environment: env.PADDLE_ENV === 'production' ? 'production' : 'sandbox',
+  },
+
   reminderScanMs: Number(env.REMINDER_SCAN_MS ?? 5 * 60_000),
 };

@@ -107,7 +107,7 @@ const FAQS = [
   ['Is there a mobile app?', 'Tasklane works in any modern browser and is fully responsive, so it works on phones and tablets without installing anything.'],
   [
     'Is this a real product?',
-    'Tasklane is a demonstration product. Accounts and data are real and work end to end, but payments are not enabled: plan limits apply, and workspace owners can switch plans for free in the admin panel.',
+    'Tasklane is a demonstration product. Accounts and data are real and work end to end. Paid plans go through Paddle in test mode: checkout, trials, seats and invoices all work, but only test cards are accepted and no real money is charged.',
   ],
 ];
 
@@ -316,7 +316,7 @@ export default function Landing() {
               ))}
             </div>
             <p className="lp-note muted small" data-reveal>
-              Payments are not enabled in this demo: owners can switch any workspace to any plan for free.
+              Paid plans start with a 7-day free trial. Payments run in test mode through Paddle, so no real money is charged.
             </p>
           </div>
         </section>

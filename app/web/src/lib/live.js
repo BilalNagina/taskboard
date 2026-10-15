@@ -34,7 +34,7 @@ function refresh(client, { workspaces, boards, tasks }) {
   }
   for (const id of tasks) run(keys.task(id));
   for (const id of workspaces) {
-    for (const key of [keys.boards(id), keys.dashboard(id), keys.members(id), keys.invites(id), keys.admin(id), keys.auditLog(id)]) run(key);
+    for (const key of [keys.boards(id), keys.dashboard(id), keys.members(id), keys.invites(id), keys.admin(id), keys.billing(id), keys.auditLog(id)]) run(key);
     for (const prefix of ['calendar', 'search', 'timesheet']) run([prefix, id]);
   }
   run(keys.workspaces);

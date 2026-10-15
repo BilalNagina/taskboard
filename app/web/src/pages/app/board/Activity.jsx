@@ -41,8 +41,13 @@ export function describe(entry, inTask = false) {
       return `deleted the board ${d.name}`;
     case 'workspace.renamed':
       return `renamed the workspace to “${d.to}”`;
+    // With `status`, the change came from the subscription (checkout, cancelling, a trial).
     case 'workspace.plan_changed':
+      if (d.status && d.to === 'free') return `ended the ${planName(d.from)} subscription; the workspace is back on Free`;
+      if (d.status === 'trialing') return `started a free trial of ${planName(d.to)}`;
       return `switched the workspace to the ${planName(d.to)} plan`;
+    case 'workspace.seats_changed':
+      return `changed the paid seats from ${d.from} to ${d.to}`;
     case 'member.invited':
       return `invited ${d.email} as ${article(d.role)} ${d.role}`;
     case 'member.joined':
