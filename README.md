@@ -37,7 +37,7 @@ flowchart LR
 
 - **CI/CD:** every pull request runs lint, tests (including PostgreSQL integration tests), the frontend build, compose validation and shellcheck. Merging to `main` builds both images, pushes them to GHCR, deploys over SSH, health-checks, and **rolls back automatically** if the new version isn't healthy.
 - **Infrastructure as code:** Terraform creates the Lightsail VM, static IP, firewall, a versioned private attachments bucket, the backup bucket (14-day lifecycle), the SES sending domain (DKIM), least-privilege IAM users for the app and for backups, and a monthly budget alert.
-- **Operations:** Let's Encrypt with auto-renewal, nightly `pg_dump` to S3 with a tested restore script, uptime and certificate-expiry checks every 15 minutes, a hardened host (SSH keys only, fail2ban, ufw, unattended upgrades).
+- **Operations:** Let's Encrypt with auto-renewal, nightly `pg_dump` to S3 with a tested restore script and a daily alert if a backup is missed, uptime and certificate-expiry checks every 15 minutes, a hardened host (SSH keys only, fail2ban, ufw, unattended upgrades).
 
 ## Repository layout
 
@@ -47,7 +47,7 @@ app/
   web/                 React frontend, NGINX config, Dockerfile
 deploy/
   single-server/       docker-compose, NGINX proxy, scripts, Terraform
-.github/workflows/     CI, deploy, uptime check
+.github/workflows/     CI, deploy, uptime check, backup check
 docs/single-server/    architecture, runbook, cost
 compose.dev.yml        local development
 ```

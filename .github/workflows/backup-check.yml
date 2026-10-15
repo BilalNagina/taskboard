@@ -1,0 +1,46 @@
+name: Backup check
+
+# The nightly backup runs from cron on the server, so nothing notices when it stops. This
+# job looks at the marker backup.sh writes after a successful upload and fails if it's
+# older than 26 hours. A failed run emails the repository owner.
+on:
+  schedule:
+    - cron: "0 6 * * *" # 3.5 hours after the 02:30 UTC backup
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    # Clear the DOMAIN variable to pause checks while the environment is torn down.
+    if: ${{ vars.DOMAIN != '' }}
+    runs-on: ubuntu-latest
+    env:
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+      SSH_USER: ${{ vars.SSH_USER || 'ubuntu' }}
+    steps:
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Last successful backup is less than 26 hours old
+        run: |
+          marker=/var/backups/taskboard/last-success
+          if ! info="$(ssh "$SSH_USER@$SSH_HOST" "stat -c %Y $marker && cat $marker")"; then
+            echo "::error::No successful backup recorded ($marker is missing). See /var/log/taskboard-backup.log on the server."
+            exit 1
+          fi
+          written="$(echo "$info" | head -1)"
+          name="$(echo "$info" | tail -1)"
+          hours=$(( ($(date +%s) - written) / 3600 ))
+          echo "Last successful backup: $name, $hours hours ago"
+          if [ "$hours" -ge 26 ]; then
+            echo "::error::The last successful backup is $hours hours old. See /var/log/taskboard-backup.log on the server."
+            exit 1
+          fi

@@ -50,7 +50,7 @@ flowchart LR
 - **The proxy re-resolves container names** (`resolver 127.0.0.11`), so recreating the api or web containers on deploy never leaves NGINX pointing at a dead IP.
 - **HTTPS bootstraps itself.** The proxy serves only the ACME challenge until a certificate exists, then enables HTTPS on restart. Renewals are certbot's systemd timer plus a deploy hook that restarts the proxy.
 - **Uptime is checked from outside.** A scheduled GitHub Actions job checks `/readyz` and certificate expiry from GitHub's network. A monitor on the same VM would go down with it.
-- **Backups are tested by restoring them.** `restore.sh latest` pulls the newest dump from S3 and loads it, which is how the backup is verified.
+- **Backups are tested by restoring them.** `restore.sh latest` pulls the newest dump from S3 and loads it, which is how the backup is verified. A daily **Backup check** workflow fails if the last successful upload is more than 26 hours old, so a broken nightly job can't go unnoticed.
 - **One image, two processes.** The worker runs the API image with a different command, so both always deploy together at the same commit and share the data-access code.
 - **Attachments go through the API, not presigned URLs.** The API checks the file belongs to the signed-in user, then streams it from a private bucket with `Content-Disposition: attachment`, so an uploaded HTML or SVG file can never run as a page on the site.
 - **Reminders are at-least-once.** Each email job re-checks the task right before sending (still open, same due date, not yet reminded). Job ids include the due date, so repeated scans don't queue duplicates and a new due date earns a new reminder.
