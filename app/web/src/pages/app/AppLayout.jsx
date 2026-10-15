@@ -13,6 +13,7 @@ import { Avatar, Dropdown, Logo, PromptDialog } from '../../components/ui.jsx';
 import { api } from '../../lib/api.js';
 import { modKey } from '../../lib/format.js';
 import { useLiveStatus, useLiveUpdates } from '../../lib/live.js';
+import { useRetain } from '../../lib/paddle.js';
 import { keys, useBoards, useMe, useMyInvites, useWorkspaces } from '../../lib/queries.js';
 import { applyTheme } from '../../lib/theme.js';
 import NewBoardDialog from './NewBoardDialog.jsx';
@@ -86,6 +87,7 @@ export default function AppLayout() {
   const boardId = Number(location.pathname.match(/^\/app\/boards\/(\d+)/)?.[1]) || null;
   const taskId = Number(new URLSearchParams(location.search).get('task')) || null;
   useLiveUpdates(boardId);
+  useRetain(workspace);
 
   // New accounts see the welcome tour once.
   useEffect(() => {

@@ -109,6 +109,18 @@ Billing is off until `PADDLE_API_KEY` is set; owners then switch plans for free.
 
 Test with card `4242 4242 4242 4242`, any future expiry date and security code `100`.
 
+### Switch billing to live (real money)
+
+Only after Paddle has verified the live account and approved the domain; until then live checkouts fail.
+
+1. In the **live** dashboard, set the default payment link to `https://<DOMAIN>/`, choose payment methods, and add payout details.
+2. The live catalog must have the same products and prices as sandbox, with the same custom data on each price (`{"plan": ..., "interval": ...}`). The code finds prices by that, so no ids change.
+3. Create a live webhook destination for `https://<DOMAIN>/api/billing/webhook` with the `subscription.*` events, a live API key, and a live client-side token (`live_...`).
+4. In `/opt/taskboard/.env`, set `PADDLE_ENV=production` and replace all three `PADDLE_*` values with the live ones, then `docker compose up -d api`.
+5. Sandbox subscriptions in the database stop getting updates after the switch. Check for any with `SELECT id, workspace_id, status FROM subscriptions WHERE status <> 'canceled';` before switching, and deal with them first.
+
+The webhook accepts requests only from the addresses Paddle lists at `https://api.paddle.com/ips` (fetched by the app and refreshed hourly), and then checks the signature.
+
 ### Rotate the Paddle keys
 
 Create a new API key (or roll the webhook destination's secret) in Paddle, update `.env`, run `docker compose up -d api`, then revoke the old key. Paddle retries any webhooks that fail in the meantime.

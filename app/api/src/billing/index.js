@@ -8,6 +8,7 @@
 //   portalLinks(...)             signed-in links to the provider's billing portal
 //   previewChange(sub, change)   { currency, dueNow, recurring, nextBilledAt }
 //   applyChange(sub, change)     the updated subscription
+//   isWebhookSource(ip)          whether a webhook request comes from the provider
 //   parseWebhook(raw, signature) { id, type, subscription } after verifying the signature
 //
 // Without provider keys (local development, tests) there's no billing: owners switch
