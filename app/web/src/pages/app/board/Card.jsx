@@ -35,7 +35,8 @@ export function CardView({ ref, card, labels, members, onOpen, className = '', o
   const priority = priorityInfo(card.priority);
   const cardLabels = card.labelIds.map((id) => labels.get(id)).filter(Boolean);
   const assignees = card.assigneeIds.map((id) => members.get(id)).filter(Boolean);
-  const hasFooter = due || card.repeat || card.priority !== 'none' || card.checklistTotal || card.commentCount || card.attachmentCount || card.hasDescription || assignees.length;
+  // Boolean, not the last count: `{0 && …}` would render a stray "0" on the card.
+  const hasFooter = Boolean(due || card.repeat || card.priority !== 'none' || card.checklistTotal || card.commentCount || card.attachmentCount || card.hasDescription || assignees.length);
 
   return (
     <article

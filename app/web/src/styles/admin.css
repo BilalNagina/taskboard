@@ -108,8 +108,9 @@ kbd + kbd { margin-left: 3px; }
 .billing-form { display: grid; gap: 14px; margin-top: 16px; }
 .billing-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .billing-seats { max-width: 140px; }
-.billing-total { display: grid; gap: 4px; padding: 12px 14px; border-radius: var(--radius); background: var(--bg-subtle); font-size: 14px; }
+.billing-total { display: block; padding: 12px 14px; border-radius: var(--radius); background: var(--bg-subtle); font-size: 14px; }
 .billing-total b { font-variant-numeric: tabular-nums; }
+.billing-total p + p { margin-top: 4px; }
 .billing-total .spinner { vertical-align: middle; margin-right: 6px; }
 
 .admin-table-wrap { overflow-x: auto; }
