@@ -169,7 +169,9 @@ export default function Billing({ workspaceId, billing, waiting, onWaitingChange
                   </header>
                   <p className="plan-price">
                     {plan.key === 'free' ? (
-                      <b>Free</b>
+                      <>
+                        <b>$0</b> <span className="muted small">forever</span>
+                      </>
                     ) : price ? (
                       <>
                         <b>{money(price.amount, price.currency)}</b> <span className="muted small">per seat / {per(interval)}</span>
