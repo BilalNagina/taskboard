@@ -54,6 +54,9 @@ export function billingRoutes({ repo, access, session, log, billing }) {
       seatsInUse: Number(seatsInUse),
       subscription: view(live),
       hasBillingAccount: Boolean(latest),
+      // The provider's id for whoever pays, so the browser can tell Paddle Retain (payment
+      // recovery) who's signed in. Owners only, like the rest of this.
+      customerId: latest?.customerId ?? null,
       plans: PLAN_KEYS.map((key) => ({ key, ...PLANS[key], prices: catalog[key] ?? null })),
     };
   }
@@ -130,6 +133,17 @@ export function billingWebhookRoute({ repo, billing, live }) {
 
   router.post('/billing/webhook', express.raw({ type: '*/*', limit: '1mb' }), async (req, res) => {
     if (!billing) return res.status(404).json({ error: 'not found' });
+    // Only the provider's own servers may call this. req.ip is the client address as seen
+    // by the edge proxy (the app trusts only the proxy's X-Forwarded-For).
+    try {
+      if (!(await billing.isWebhookSource(req.ip))) {
+        req.log?.warn({ ip: req.ip }, 'billing webhook from an address that isn’t the provider’s');
+        return res.status(403).json({ error: 'forbidden' });
+      }
+    } catch (err) {
+      req.log?.error({ err: err.message }, 'billing webhook source check unavailable');
+      return res.status(503).json({ error: 'try again later' });
+    }
     const signature = req.get('paddle-signature');
     if (!signature || !Buffer.isBuffer(req.body) || req.body.length === 0) {
       return res.status(400).json({ error: 'missing signature or body' });

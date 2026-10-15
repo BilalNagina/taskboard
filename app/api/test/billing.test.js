@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 import { createBilling } from '../src/billing/index.js';
+import { inAnyCidr, inCidr } from '../src/billing/ips.js';
 import { createPaddleBilling } from '../src/billing/paddle.js';
 
 const SECRET = 'pdl_ntfset_test_secret';
@@ -134,4 +135,33 @@ test('events that aren’t about subscriptions are acknowledged without a subscr
   const event = await paddle.parseWebhook(body, sign(body));
   assert.equal(event.type, 'customer.created');
   assert.equal(event.subscription, null);
+});
+
+test('webhook sources match Paddle’s CIDR list, IPv4-mapped or not', () => {
+  assert.equal(inCidr('34.232.58.13', '34.232.58.13/32'), true);
+  assert.equal(inCidr('::ffff:34.232.58.13', '34.232.58.13/32'), true);
+  assert.equal(inCidr('34.232.58.14', '34.232.58.13/32'), false);
+  assert.equal(inCidr('10.1.2.3', '10.0.0.0/8'), true);
+  assert.equal(inCidr('11.0.0.1', '10.0.0.0/8'), false);
+  for (const bad of ['', '::1', '1.2.3', '1.2.3.999', 'not an ip', undefined]) assert.equal(inCidr(bad, '0.0.0.0/0'), false, String(bad));
+  assert.equal(inAnyCidr('3.3.3.3', ['1.1.1.1/32', '3.3.3.3/32']), true);
+});
+
+test('Paddle’s webhook IPs are fetched from its API, cached, and kept if a refresh fails', async () => {
+  const requested = [];
+  let fail = false;
+  const fetch = async (url) => {
+    requested.push(url);
+    if (fail) throw new Error('network down');
+    return { ok: true, json: async () => ({ data: { ipv4_cidrs: ['34.232.58.13/32', '34.195.105.136/32'] } }) };
+  };
+  const live = createPaddleBilling({ apiKey: 'pdl_live_apikey_test', webhookSecret: SECRET, clientToken: 'live_token', environment: 'production', fetch });
+  assert.equal(await live.isWebhookSource('34.195.105.136'), true);
+  assert.equal(await live.isWebhookSource('203.0.113.9'), false);
+  assert.deepEqual(requested, ['https://api.paddle.com/ips'], 'one fetch, then the cache');
+
+  const neverLoaded = createPaddleBilling({ apiKey: 'pdl_sdbx_apikey_test', webhookSecret: SECRET, clientToken: 'test_token', environment: 'sandbox', fetch });
+  fail = true;
+  await assert.rejects(() => neverLoaded.isWebhookSource('34.232.58.13'), /couldn't load Paddle's webhook IP addresses/);
+  assert.equal(requested.at(-1), 'https://sandbox-api.paddle.com/ips');
 });

@@ -3,14 +3,37 @@
 // rest of the app talks to the interface described in billing/index.js.
 import { Environment, LogLevel, Paddle } from '@paddle/paddle-node-sdk';
 import { BillingError } from './errors.js';
+import { inAnyCidr } from './ips.js';
 
 const CATALOG_TTL_MS = 10 * 60_000;
+const IPS_TTL_MS = 60 * 60_000;
 
-export function createPaddleBilling({ apiKey, webhookSecret, clientToken, environment }, logger) {
+export function createPaddleBilling({ apiKey, webhookSecret, clientToken, environment, fetch = globalThis.fetch }, logger) {
+  const live = environment === 'production';
   const paddle = new Paddle(apiKey, {
-    environment: environment === 'production' ? Environment.production : Environment.sandbox,
+    environment: live ? Environment.production : Environment.sandbox,
     logLevel: LogLevel.error,
   });
+
+  // The addresses Paddle sends webhooks from. Paddle's /ips endpoint is the source of
+  // truth (the list can change), so it's fetched, cached for an hour, and the last good
+  // copy kept if a refresh fails. With no copy at all this throws, and the webhook answers
+  // 503 so Paddle retries.
+  let sources = null;
+  async function webhookSources() {
+    if (sources && sources.at > Date.now() - IPS_TTL_MS) return sources.cidrs;
+    try {
+      const res = await fetch(live ? 'https://api.paddle.com/ips' : 'https://sandbox-api.paddle.com/ips');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const cidrs = (await res.json())?.data?.ipv4_cidrs;
+      if (!Array.isArray(cidrs) || cidrs.length === 0) throw new Error('no ipv4_cidrs in the response');
+      sources = { at: Date.now(), cidrs };
+    } catch (err) {
+      if (!sources) throw new Error(`couldn't load Paddle's webhook IP addresses: ${err.message}`, { cause: err });
+      logger?.warn({ err: err.message }, 'refreshing Paddle webhook IPs failed; keeping the last list');
+    }
+    return sources.cidrs;
+  }
 
   // Prices are found by their custom data ({ plan, interval }), set when the catalog was
   // created, so price ids never need copying into config and sandbox and live just work.
@@ -97,7 +120,10 @@ export function createPaddleBilling({ apiKey, webhookSecret, clientToken, enviro
     provider: 'paddle',
 
     // What the browser needs to open Paddle Checkout. The client token is public.
-    clientConfig: () => ({ provider: 'paddle', environment: environment === 'production' ? 'production' : 'sandbox', clientToken }),
+    clientConfig: () => ({ provider: 'paddle', environment: live ? 'production' : 'sandbox', clientToken }),
+
+    // Whether a request comes from one of Paddle's webhook servers.
+    isWebhookSource: async (ip) => inAnyCidr(ip, await webhookSources()),
 
     catalog,
 

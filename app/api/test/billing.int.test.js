@@ -13,9 +13,16 @@ const PRICES = {
 
 function fakeBilling() {
   const calls = [];
+  // 'yes', 'no', or 'down' (the provider's IP list can't be loaded).
+  const source = { state: 'yes' };
   const price = (plan, interval, amount, maxSeats) => ({ priceId: PRICES[plan][interval], amount, currency: 'USD', maxSeats, trialDays: 7 });
   return {
     calls,
+    source,
+    isWebhookSource: async () => {
+      if (source.state === 'down') throw new Error('IP list unavailable');
+      return source.state === 'yes';
+    },
     provider: 'fake',
     clientConfig: () => ({ provider: 'fake', environment: 'sandbox', clientToken: 'test_token' }),
     catalog: async () => ({
@@ -81,6 +88,22 @@ describe('paid plans', { skip: skipIntegration }, () => {
   });
 
   const planOf = async (owner) => (await owner.agent.get('/api/workspaces')).body.find((w) => w.id === owner.workspace.id).plan;
+
+  test('webhooks are refused from addresses that aren’t the provider’s', async () => {
+    const owner = await signUp('Ira');
+    const event = subscriptionEvent(owner);
+    try {
+      billing.source.state = 'no';
+      assert.equal((await deliver(event)).status, 403);
+      billing.source.state = 'down';
+      assert.equal((await deliver(event)).status, 503, 'unknown sources get a retry, not a lost event');
+    } finally {
+      billing.source.state = 'yes';
+    }
+    assert.equal(await planOf(owner), 'free');
+    assert.equal((await deliver(event)).status, 200);
+    assert.equal(await planOf(owner), 'pro');
+  });
 
   test('webhooks are refused without a valid signature', async () => {
     const owner = await signUp('Una');
