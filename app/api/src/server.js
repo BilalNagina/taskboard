@@ -1,6 +1,6 @@
-import pino from 'pino';
 import { createBilling } from './billing/index.js';
 import { config } from './config.js';
+import { createLogger } from './logger.js';
 import { createRepo } from './data/index.js';
 import { createDb, waitForDb } from './db.js';
 import { createApp } from './http/app.js';
@@ -11,7 +11,7 @@ import { createRedis } from './redis.js';
 import { createRateLimiter, createSessionStore } from './sessions.js';
 import { createS3Storage } from './storage.js';
 
-const logger = pino({ level: config.logLevel });
+const logger = createLogger(config.logLevel);
 const db = createDb(config.databaseUrl);
 const redis = createRedis(config.redisUrl, logger);
 const queue = createQueue(config.redisUrl);

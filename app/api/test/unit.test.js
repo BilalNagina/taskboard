@@ -7,6 +7,7 @@ import { imageType } from '../src/http/routes/attachments.js';
 import { buildInviteEmail, buildNotificationEmail, buildPasswordResetEmail, buildReminderEmail } from '../src/emails.js';
 import { emailTypesFor } from '../src/data/notifications.js';
 import { createApp } from '../src/http/app.js';
+import { createLogger } from '../src/logger.js';
 import { HttpError } from '../src/http/errors.js';
 import { parseContentType, parseFilename, parseId, schemas, validate } from '../src/http/validation.js';
 import { inviteLink, resetLink, sendInvite, sendPasswordReset } from '../src/jobs.js';
@@ -341,4 +342,19 @@ test('notification email: subject for one or several, links, and escaped content
   assert.equal(many.subject, '2 updates in Tasklane');
   assert.match(many.text, /<Bo> assigned you “A” \(Launch\)/);
   assert.match(many.text, /<Bo> commented on “B”/);
+});
+
+test('request logs never contain session cookies or other credentials', async () => {
+  const lines = [];
+  const logger = createLogger('info', { write: (line) => lines.push(line) });
+  const app = createApp({ repo: {}, sessions: { ttlSeconds: 60, get: async () => null }, limiter: {}, storage: {}, jobs: {}, ping: async () => {}, logger });
+  await request(app)
+    .get('/api/auth/me')
+    .set('Cookie', 'tb_session=secret-session-token')
+    .set('Authorization', 'Bearer secret-bearer-token')
+    .set('Paddle-Signature', 'ts=1;h1=secret-signature');
+  const log = lines.join('');
+  assert.match(log, /"url":"\/api\/auth\/me"/, 'the request is still logged');
+  assert.match(log, /\[redacted\]/);
+  for (const secret of ['secret-session-token', 'secret-bearer-token', 'secret-signature']) assert.ok(!log.includes(secret), `${secret} leaked`);
 });

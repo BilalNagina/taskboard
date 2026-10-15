@@ -2,9 +2,9 @@
 // Runs from the same image as the API with a different command (node src/worker.js).
 import http from 'node:http';
 import { Worker } from 'bullmq';
-import pino from 'pino';
 import client from 'prom-client';
 import { config } from './config.js';
+import { createLogger } from './logger.js';
 import { createRepo } from './data/index.js';
 import { createDb, waitForDb } from './db.js';
 import { createJobHandlers, resetLink } from './jobs.js';
@@ -13,7 +13,7 @@ import { createMailer } from './mailer.js';
 import { createQueue, QUEUE_NAME, queueConnection } from './queue.js';
 import { createRedis } from './redis.js';
 
-const logger = pino({ level: config.logLevel });
+const logger = createLogger(config.logLevel);
 const db = createDb(config.databaseUrl);
 await waitForDb(db, logger);
 
